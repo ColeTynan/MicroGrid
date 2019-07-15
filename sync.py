@@ -18,7 +18,7 @@ def get_ip_address(ifname):
 # may need to create a priority queue of some kind to determine in what order the pis will be talking
 
 #handshake with neighbor
-def handshake(outsock):        #add functionality to take a socket as input to generalize
+def handshake(outsock, insock ):        #add functionality to take a socket as input to generalize
     print "Attempting handshake..."
     while True:
         print "Sending initial probe."
@@ -48,24 +48,22 @@ def handshake(outsock):        #add functionality to take a socket as input to g
 print "Reading IP addresses of all neighbors"
 
 
-"""
 N_IP = "169.254.142.58" #neighbors ip address
 MY_IP = get_ip_address('eth0')    #this pi's ip address
 UDP_PORT = 5005
 HNDSHK_MSSG_GIVE = "0"      #message sent when initially probing for raspberry pi
 HNDSHK_MSSG_RECV = "1"      #message sent when responding to message from other pi
 PHP = False                 #Pi Has Priority : if true this pi will go first in exchanging messages
-"""
 
 
- = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+sockout= socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 sockin = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 sockin.settimeout(5.0)
 
 sockin.bind(( MY_IP, 5005)) #bind the receiving socket with the ip address and port
 
 
-handshake()
+handshake(sockout)
 
 for t in range(0, 10):  #the time intervals t
     while True:
