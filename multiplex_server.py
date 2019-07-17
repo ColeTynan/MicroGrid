@@ -4,24 +4,26 @@ import sys
 import queue
 import time
 
+#======Start of Server Creation=====#
 # Create a TCP/IP socket
 server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 server.setblocking(0)
 
 # Bind the socket to the port
-<<<<<<< HEAD
 server_address = ('169.254.86.232', 10001)
-=======
-server_address = ('169.254.8.6232', 10001)
->>>>>>> Add files to git
 print ('starting up on %s port %s' % server_address, file=sys.stderr)
 server.bind(server_address)
 
 #Listen for incoming connections
 server.listen(5)
 
-#SEP (Upper level protocol to how to receive bytes)
+#=====End of Server Creation=====#
+
+#=====Start of Data Structure & Variable Initialization=====#
+#SEP (Upper level protocol to how to receive bytes bigger than initial set size)
 sep = '\n'
+#Processed (Protocol for moving forward only when we receive this signal)
+processed = '#####'
 
 #Dict of IPs and their corresponding ports for the neighboring controllers
 neighbors = {
@@ -32,24 +34,42 @@ neighbors = {
 this_timestamp = 0
 
 #Create a list of neighbors and their associated timestamp that we get
-neighbors_timestamp = {}
+neighborIPs_timestamp = {}
 
-#Create a dict of sockets corresponding to neighbors
-output_sockets = {}
+#Create a dict of IPs corresponding to output sockets
+IP_output_sockets = {}
+#Create a dict of IPs corresponding to input sockets 
+IP_input_sockets = {}
 
 # Sockets to which we expect to write
 outputs = []
+# Sockets from which we read from
+inputs = [ server ]
 
 #For each corresponding ip/port, we create a new socket and connect to it
 #The server is going to wait for a socket to become writable before sending any data
 # Each output connection then needs a queue to act as a buffer for data to be sent through
+# This buffer is in the form of {socket -> Queue[message1, message2, ... ]}
 message_queues = {}
 
+#Complete list of sockets to watch out for errors
+totalSockets = inputs + outputs
+
+#Variable used later to keep track of the total number of message received in an iteration
+#Number of message rece
+msg_received_count = 0
+
+#=====End of Variable initialization=====#
+
+#=====Start of Connection initialization with neighbors=====#
+# Only runs once on startup
 for ip_key, port_value  in neighbors.items():
+
+    #Create new socket for the correpsonding ip_key and port
     server_address = (ip_key, port_value)
     new_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
-    #Continually try to connect
+    #====Continually try to connect to the neighboring node using the socket we created====#
     new_socket.settimeout(10)
     while True:
         try:
@@ -58,37 +78,33 @@ for ip_key, port_value  in neighbors.items():
         except:
             print ("Connection Failed, on %s port %s, retrying in 0.5s" % server_address, file=sys.stderr)
             time.sleep(0.5)
+    #====Successful Connection====#
+
     print( "Connection Success on %s port %s, continuing"
             % server_address, file=sys.stderr )
 
-    #Give the connection a queue for data we want to send
-    message_queues[ip_key] = queue.Queue()
-    #In addition to connecting, we send our first message, which is our timestamp
-    message_queues[ip_key].put(this_timestamp)
+    #Give the connection a queue to contain data we want to send
+    message_queues[new_socket] = queue.Queue()
+    #In addition to connecting, we want to queue up the first 
+    message_queues[new_socket].put(this_timestamp)
 
+    #Set non-blocking for select
     new_socket.setblocking(0)
-    output_sockets[ip_key] = new_socket
+    
+    #Match ip key to the new socket in the output dict
+    IP_output_sockets[ip_key] = new_socket
+
+    #Add to outputs list for select
     outputs.append(new_socket)
-    server_address = (ip_key, port_value)
+#=====End of Connection Initialization with neighbors=====#
 
-# Sockets from which we read from
-inputs = [ server ]
-
-# Complete list of sockets to watch out for errors
-totalSockets = inputs + outputs
-
-
-msg_received_count = 0
-
+# Debugs for output/input lists
 #print(outputs, file=sys.stderr)
 #print(inputs, file=sys.stderr)
 
-#Program main loop using select() to block and wait for network activity
+#===== Main Program ====#
 while inputs:
 
-    # Wait for one of the sockets to be ready for processing
-    time.sleep(.5)
-    print ('\nwaiting for the next event', file=sys.stderr)
     readable, writable, exceptional = select.select(inputs, outputs, totalSockets)
 
     '''
@@ -127,32 +143,35 @@ while inputs:
         if s is server:
             # A "readable" server socket is ready to accept a connection
             connection, client_address = s.accept()
+
             print ('new connection from', client_address, file=sys.stderr)
+            
+            # Set non-blocking for select
             connection.setblocking(0)
+
+            # Add this connection to the list of inputs
             inputs.append(connection)
 
-            #Add this new connection as a neighbor and fill it with -1 to represent begin of connection
-            neighbors_timestamp[connection] = -1
-
+            #Get the IP address of this new connection
+            # And add it as a neighbor and fill it with -1 to represent initial connection
             ip_address = connection.getpeername()[0]
+            neighborIPs_timestamp[connection] = -1
+
 
         else:
-
-            # Loop to receive the complete message
+            
+            # Try to receive initial data
             data = s.recv(1024)
 
             if data:
                 data = data.decode()
 
+                # Loop to receive the complete message
                 while sep not in data:
                     receive = s.recv(256)
                     receive = receive.decode()
                     data += receive
 
-<<<<<<< HEAD
-=======
-                # how does this actually convert (note)
->>>>>>> Add files to git
                 data = int(data)
 
                 # A readable client socket has data
@@ -166,10 +185,6 @@ while inputs:
                 if (msg_received_count ==
                         len(neighbors_timestamp)) :
                     for conn, timestamp in neighbors_timestamp.items():
-<<<<<<< HEAD
-=======
-                        
->>>>>>> Add files to git
                         if (this_timestamp != timestamp):
                             print ("ERROR: TIMESTAMP NOT EQUAL", file=sys.stderr)
                             exit(1)
@@ -178,10 +193,6 @@ while inputs:
                         this_timestamp+=1
                         ip_address = s.getpeername()[0]
                         message_queues[ip_address].put( this_timestamp )
-<<<<<<< HEAD
-=======
-                        msg_received_count = 0
->>>>>>> Add files to git
                 # # Add output channel for response
                 # if s not in outputs:
                 #     outputs.append(s)
@@ -236,8 +247,4 @@ while inputs:
         s.close()
 
         # Remove message queue
-<<<<<<< HEAD
         del message_queues[s]
-=======
-        del message_queues[s]
->>>>>>> Add files to git
