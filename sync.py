@@ -1,4 +1,5 @@
 import socket
+import timeit
 import time
 import fcntl
 import struct
@@ -47,6 +48,7 @@ def handshake(outsock, insock ):        #add functionality to take a socket as i
 
 print "Reading IP addresses of all neighbors"
 
+start = timeit.timeit()
 
 N_IP = "169.254.142.58" #neighbors ip address
 MY_IP = get_ip_address('eth0')    #this pi's ip address
@@ -63,7 +65,7 @@ sockin.settimeout(5.0)
 sockin.bind(( MY_IP, 5005)) #bind the receiving socket with the ip address and port
 
 
-handshake(sockout)
+handshake(sockin, sockout)
 
 for t in range(0, 10):  #the time intervals t
     while True:
@@ -80,7 +82,8 @@ for t in range(0, 10):  #the time intervals t
             print "No message received, resending messages"
             continue
         
-
+end = timeit.timeit()
+print end - start
 
 
 
