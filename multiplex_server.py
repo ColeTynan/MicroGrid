@@ -163,6 +163,9 @@ while inputs:
             # Map this IP to the input socket
             IP_input_sockets[ip_address] = connection
 
+            # Create new queues for new connections
+            message_queues[connection] = queue.Queue()
+
 
         else:
             
@@ -182,7 +185,7 @@ while inputs:
                     #Add into output channel to send new data
                     if s not in outputs:
                         outputs.append(s)
-
+                    
                     #Get IP and indicate that this neighbor has been processed
                     ip_address = s.getpeername()[0]
                     neighborIPs_processed[ip_address] = True
@@ -206,6 +209,9 @@ while inputs:
                     ip_address = s.getpeername()[0]
                     neighborIPs_timestamp[ip_address] = data
                     
+                    #Put processed into message queue to send
+                    message_queues[s].put(processed)
+
                     ## ===== Process Start for next iteration subroutine ===== ##
                     #Check if the new msg_received count is equal to the number of neighbors, if so move on to next iteration 
                     msg_received_count += 1
@@ -219,15 +225,18 @@ while inputs:
 
                             #===== Processing for next iteration =====#
                             this_timestamp+=1
+                            print ("This is running")
 
                             # Queue up new iteration message into all the neighbors for sending
-                            message_queues[ip_key].put( this_timestamp )
+                            timestamp_output_socket = IP_output_sockets[ip_key]
+                            message_queues[timestamp_output_socket].put( this_timestamp )
 
                     ## ===== Process End for next iteration subroutine ===== ##
                     
+                    inputs.remove(s)
                     # Add to output channel for a response indicating we have processed timestamp signal
                     if s not in outputs:
-                         outputs.append(s)
+                        outputs.append(s)
 
             else: # ===== WIP ===== #
 
@@ -254,8 +263,7 @@ while inputs:
 
         #===== Start of Message Gathering =====#
         try:
-            ip_address = s.getpeername()[0]
-            next_msg = message_queues[ip_address].get_nowait()
+            next_msg = message_queues[s].get_nowait()
         except queue.Empty:
             # No messages in queue, but continue waiting in case a message pops up
             print ('output queue for', s.getpeername(), 'is empty retrying...', file=sys.stderr)
