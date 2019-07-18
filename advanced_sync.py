@@ -34,7 +34,7 @@ pidb = {'R1': "169.254.86.232",
 		}
 
 #port to listen to when connecting to remote IPs
-PORT = 10000 
+PORT = 20000 
 THIS_IP = get_ip_address('eth0')
 #local database, using ports to simulate different devices
 
@@ -100,10 +100,9 @@ while inputs:
 			conn, client_address = s.accept()
 			print >>sys.stderr, 'new connection with ', client_address, ' established'
 			conn.setblocking(0)
-			neighborSock[client_address] = conn
+			#del neighborSock[client_address[0]]
+			neighborSock[client_address[0]] = conn
 			inputs.append(conn)	
-			for s,v in neighborSock.items():
-				print v.getpeername()
 			if all_true(neighborSock):
 				allConnected = True
 				print 'all have connected!'
@@ -112,7 +111,13 @@ while inputs:
 					print n.getpeername()
 
 		else:
-			data = s.receive(1024)
+			data = s.recv(1024)
+			if data:
+				print "We got data"
+			else:
+				print "No data"
+				input.remove(s)
+
 			
 									#handle checking that the iteration is correct
 #TODO: handle new data from neighbors if all of the neighbors are connected
