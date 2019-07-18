@@ -20,15 +20,18 @@ server.listen(5)
 #=====End of Server Creation=====#
 
 #=====Start of Data Structure & Variable Initialization=====#
+#Dict of IPs and their corresponding ports for the neighboring controllers
+neighbors = {
+    '169.254.142.58' : 10002
+}
+
 #SEP (Upper level protocol to how to receive bytes bigger than initial set size)
 sep = '\n'
 #Processed (Protocol for moving forward only when we receive this signal)
 processed = '#####'
 
-#Dict of IPs and their corresponding ports for the neighboring controllers
-neighbors = {
-    '169.254.142.58' : 10002
-}
+#Create dict between neighbors_ip mapping to true or false indication of processed status
+neighborIPs_processed = {}
 
 #Create own timestamp for this device
 this_timestamp = 0
@@ -157,6 +160,9 @@ while inputs:
             ip_address = connection.getpeername()[0]
             neighborIPs_timestamp[connection] = -1
 
+            # Map this IP to the input socket
+            IP_input_sockets[ip_address] = connection
+
 
         else:
             
@@ -171,33 +177,59 @@ while inputs:
                     receive = s.recv(256)
                     receive = receive.decode()
                     data += receive
+                
+                #Check if the data we received corresponding to a returning 'processed' signal
+                if (data == processed):
 
-                data = int(data)
+                    print ('received returning processing signal from %s' % data, file=sys.stderr)
 
-                # A readable client socket has data
-                print ('received "%s" from %s' % (data, s.getpeername()), file=sys.stderr)
-                print ('socket name: %s' % s, file=sys.stderr)
+                    #Remove from inputs since we no longer expect a reply
+                    inputs.remove(s)
+                    #Add into output channel to send new data
+                    if s not in outputs:
+                        outputs.append(s)
 
-                neighbors_timestamp[s] = data
+                    #Get IP and indicate that this neighbor has been processed
+                    ip_address = s.getpeername()[0]
+                    neighborIPs_processed[ip_address] = True
+                
+                #If it is not a returning 'processed' signal then it must be data being sent and requires reading
+                else:
+                    # Parse into integer #
+                    data = int(data)
 
-                msg_received_count += 1
+                    print ('received "%s" from %s' % (data, s.getpeername()), file=sys.stderr)
+                    print ('socket name: %s' % s, file=sys.stderr)
 
-                if (msg_received_count ==
-                        len(neighbors_timestamp)) :
-                    for conn, timestamp in neighbors_timestamp.items():
-                        if (this_timestamp != timestamp):
-                            print ("ERROR: TIMESTAMP NOT EQUAL", file=sys.stderr)
-                            exit(1)
+                    # Update new integer timestamp
+                    ip_address = s.getpeername()[0]
+                    neighborIPs_timestamp[ip_address] = data
+                    
+                    ## ===== Process Start for next iteration subroutine ===== ##
+                    #Check if the new msg_received count is equal to the number of neighbors, if so move on to next iteration 
+                    msg_received_count += 1
+                    if (msg_received_count == len(neighborIPs_timestamp)) :
+                        for ip_key, timestamp in neighborIPs_timestamp.items():
 
-                        #If they are equal
-                        this_timestamp+=1
-                        ip_address = s.getpeername()[0]
-                        message_queues[ip_address].put( this_timestamp )
-                # # Add output channel for response
-                # if s not in outputs:
-                #     outputs.append(s)
+                            #Double check timestamps, this should never run
+                            if (this_timestamp != timestamp):
+                                print ("ERROR: TIMESTAMP NOT EQUAL", file=sys.stderr)
+                                exit(1)
 
-            else:
+                            #===== Processing for next iteration =====#
+                            this_timestamp+=1
+
+                            # Queue up new iteration message into all the neighbors for sending
+                            message_queues[ip_key].put( this_timestamp )
+
+                    ## ===== Process End for next iteration subroutine ===== ##
+                    
+                    # Add to output channel for a response indicating we have processed timestamp signal
+                    if s not in outputs:
+                         outputs.append(s)
+
+            else: # ===== WIP ===== #
+
                 # Interpret empty result as closed connection
                 print ('closing', client_address, 'after readitng no data', file=sys.stderr)
                 # Stop listening for input on the connection
