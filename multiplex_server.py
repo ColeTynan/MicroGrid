@@ -172,12 +172,6 @@ while inputs:
             if data:
                 data = data.decode()
 
-                # Loop to receive the complete message
-                while sep not in data:
-                    receive = s.recv(256)
-                    receive = receive.decode()
-                    data += receive
-                
                 #Check if the data we received corresponding to a returning 'processed' signal
                 if (data == processed):
 
@@ -195,6 +189,13 @@ while inputs:
                 
                 #If it is not a returning 'processed' signal then it must be data being sent and requires reading
                 else:
+                    
+                    # Loop to receive the complete message
+                    while sep not in data:
+                        receive = s.recv(256)
+                        receive = receive.decode()
+                        data += receive
+
                     # Parse into integer #
                     data = int(data)
 
@@ -250,18 +251,31 @@ while inputs:
     """
 
     for s in writable:
+
+        #===== Start of Message Gathering =====#
         try:
             ip_address = s.getpeername()[0]
             next_msg = message_queues[ip_address].get_nowait()
         except queue.Empty:
-            # # No messages waiting so stop checking for writability
-            print ('output queue for', s.getpeername(), 'is empty', file=sys.stderr)
-            # outputs.remove(s)
+            # No messages in queue, but continue waiting in case a message pops up
+            print ('output queue for', s.getpeername(), 'is empty retrying...', file=sys.stderr)
             continue
         else:
-            print ('sending "%s" to %s' % (next_msg, s.getpeername()), file=sys.stderr)
-            send_msg = (str(next_msg) + sep).encode()
-            s.send(send_msg)
+            # Once a valid message has been retrieved, process the message
+            if ( next_msg == processed ):
+                print ('sending processed return to %s' % s.getpeername(), file=sys.stderr)
+                s.send(next_msg.encode())
+
+            else:
+                print ('sending "%s" to %s' % (next_msg, s.getpeername()), file=sys.stderr)
+                send_msg = (str(next_msg) + sep).encode()
+                s.send(send_msg)
+
+            #Remove from output queue back to input
+            # We're either expecting new timestamped message or expecting processed return signal
+            outputs.remove(s)
+            if s not in inputs:
+                inputs.append(s)
 
     """
     ===Exceptional===
