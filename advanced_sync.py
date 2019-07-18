@@ -89,6 +89,7 @@ for k, v in neighborSock.items():
 	inputs.append(v)
 #We start by seeking out neighbors. some fail to accept connections, we wait for them to come online
 
+
 k = 0
 while inputs:
 	print >>sys.stderr, 'Waiting for neighbors to chime in'
@@ -111,12 +112,8 @@ while inputs:
 					print n.getpeername()
 
 		else:
-			if allConnected:
+			data = s.receive(1024)
+			
 									#handle checking that the iteration is correct
 #TODO: handle new data from neighbors if all of the neighbors are connected
-									
-
-
-
-
 
