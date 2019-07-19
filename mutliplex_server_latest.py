@@ -10,7 +10,7 @@ server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 server.setblocking(0)
 
 # Bind the socket to the port
-server_address = ('169.254.86.232', 10001)
+server_address = ('169.254.142.58', 10000)
 print ('starting up on %s port %s' % server_address, file=sys.stderr)
 server.bind(server_address)
 
@@ -22,7 +22,7 @@ server.listen(5)
 #=====Start of Data Structure & Variable Initialization=====#
 #Dict of IPs and their corresponding ports for the neighboring controllers
 neighbors = {
-    '169.254.142.58' : 10002
+    '169.254.86.232' : 10000
 }
 
 #SEP (Upper level protocol to how to receive bytes bigger than initial set size)
@@ -41,7 +41,7 @@ neighborIPs_timestamp = {}
 
 #Create a dict of IPs corresponding to output sockets
 IP_output_sockets = {}
-#Create a dict of IPs corresponding to input sockets 
+#Create a dict of IPs corresponding to input sockets
 IP_input_sockets = {}
 
 # Sockets to which we expect to write
@@ -88,12 +88,12 @@ for ip_key, port_value  in neighbors.items():
 
     #Give the connection a queue to contain data we want to send
     message_queues[new_socket] = queue.Queue()
-    #In addition to connecting, we want to queue up the first 
+    #In addition to connecting, we want to queue up the first
     message_queues[new_socket].put(this_timestamp)
 
     #Set non-blocking for select
     new_socket.setblocking(0)
-    
+
     #Match ip key to the new socket in the output dict
     IP_output_sockets[ip_key] = new_socket
 
@@ -105,7 +105,7 @@ for ip_key, port_value  in neighbors.items():
 #print(outputs, file=sys.stderr)
 #print(inputs, file=sys.stderr)
 
-#Debug var
+# Debug Var
 iteration_count = -1
 
 #===== Main Program ====#
@@ -113,14 +113,37 @@ while inputs:
 
     iteration_count+=1
     readable, writable, exceptional = select.select(inputs, outputs, totalSockets)
+    print("   ")
     print(iteration_count)
     print("Readable:")
     print(readable)
-    print("Writable")
+    print("    ")
+    print("Inputs:")
+    print(inputs)
+    print("    ")
+    print("Outputs:")
+    print(outputs)
+    print("     ")
+    print("Writable:")
     print(writable)
-    if(iteration_count == 10):
-        print("Exiting..")
-        exit(0)
+    print("     ")
+    print("Message Queue:")
+    for socketr, queuer in message_queues.items():
+        print("Socket: ", socketr)
+        for elem in queuer.queue:
+            print("Queue Element:", elem)
+        print("    ")
+    print("     ")
+    print("This_timestamp: ", this_timestamp)
+    print("msg_recv_count", msg_received_count)
+    print("length of neighborsIP_timestamp", len(neighborIPs_timestamp))
+    for ip, timestamp in neighborIPs_timestamp.items():
+        print ("IP: ", ip)
+        print ("timestamp: ", timestamp)
+
+    #if(iteration_count == 10000):
+    #    print("Exiting...")
+    #    exit(0)
 
     '''
     readable,writable,exceptional
@@ -160,7 +183,7 @@ while inputs:
             connection, client_address = s.accept()
 
             print ('new connection from', client_address, file=sys.stderr)
-            
+
             # Set non-blocking for select
             connection.setblocking(0)
 
@@ -170,7 +193,7 @@ while inputs:
             #Get the IP address of this new connection
             # And add it as a neighbor and fill it with -1 to represent initial connection
             ip_address = connection.getpeername()[0]
-            neighborIPs_timestamp[connection] = -1
+            neighborIPs_timestamp[ip_address] = -1
 
             # Map this IP to the input socket
             IP_input_sockets[ip_address] = connection
@@ -179,7 +202,7 @@ while inputs:
             message_queues[connection] = queue.Queue()
 
         else:
-            
+
             # Try to receive initial data
             data = s.recv(1024)
 
@@ -195,15 +218,16 @@ while inputs:
                     inputs.remove(s)
                     #Add into output channel to send new data
                     if s not in outputs:
+                        print("Socket is put back into outputs from processed")
                         outputs.append(s)
-                    
+
                     #Get IP and indicate that this neighbor has been processed
                     ip_address = s.getpeername()[0]
                     neighborIPs_processed[ip_address] = True
-                
+
                 #If it is not a returning 'processed' signal then it must be data being sent and requires reading
                 else:
-                    
+
                     # Loop to receive the complete message
                     while sep not in data:
                         receive = s.recv(256)
@@ -219,12 +243,12 @@ while inputs:
                     # Update new integer timestamp
                     ip_address = s.getpeername()[0]
                     neighborIPs_timestamp[ip_address] = data
-                    
+
                     #Put processed into message queue to send
                     message_queues[s].put(processed)
 
                     ## ===== Process Start for next iteration subroutine ===== ##
-                    #Check if the new msg_received count is equal to the number of neighbors, if so move on to next iteration 
+                    #Check if the new msg_received count is equal to the number of neighbors, if so move on to next iteration
                     msg_received_count += 1
                     if (msg_received_count == len(neighborIPs_timestamp)) :
                         for ip_key, timestamp in neighborIPs_timestamp.items():
@@ -236,18 +260,22 @@ while inputs:
 
                             #===== Processing for next iteration =====#
                             this_timestamp+=1
-                            print ("This is running")
+
+                            if (this_timestamp == 1000):
+                                print("Exiting...")
+                                exit(0)
 
                             # Queue up new iteration message into all the neighbors for sending
                             timestamp_output_socket = IP_output_sockets[ip_key]
                             message_queues[timestamp_output_socket].put( this_timestamp )
+                            msg_received_count = 0
 
                     ## ===== Process End for next iteration subroutine ===== ##
-                    
-                    #inputs.remove(s)
+
+                    inputs.remove(s)
                     # Add to output channel for a response indicating we have processed timestamp signal
-                    #if s not in outputs:
-                    #    outputs.append(s)
+                    if s not in outputs:
+                        outputs.append(s)
 
             else: # ===== WIP ===== #
 
@@ -294,7 +322,7 @@ while inputs:
             # We're either expecting new timestamped message or expecting processed return signal
             outputs.remove(s)
             if s not in inputs:
-                print("socket %s is put back into inputs" % s)
+                print("socket %s is put back into inputs", s)
                 inputs.append(s)
 
     """
