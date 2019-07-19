@@ -192,11 +192,10 @@ while inputs:
                     print ('received returning processing signal from %s' % data, file=sys.stderr)
 
                     #Remove from inputs since we no longer expect a reply
-                    #inputs.remove(s)
+                    inputs.remove(s)
                     #Add into output channel to send new data
-                    #if s not in outputs:
-                    #    print("")
-                    #    outputs.append(s)
+                    if s not in outputs:
+                        outputs.append(s)
                     
                     #Get IP and indicate that this neighbor has been processed
                     ip_address = s.getpeername()[0]
