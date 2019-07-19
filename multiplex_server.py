@@ -105,10 +105,22 @@ for ip_key, port_value  in neighbors.items():
 #print(outputs, file=sys.stderr)
 #print(inputs, file=sys.stderr)
 
+#Debug var
+iteration_count = -1
+
 #===== Main Program ====#
 while inputs:
 
+    iteration_count+=1
     readable, writable, exceptional = select.select(inputs, outputs, totalSockets)
+    print(iteration_count)
+    print("Readable:")
+    print(readable)
+    print("Writable")
+    print(writable)
+    if(iteration_count == 10):
+        print("Exiting..")
+        exit(0)
 
     '''
     readable,writable,exceptional
@@ -166,7 +178,6 @@ while inputs:
             # Create new queues for new connections
             message_queues[connection] = queue.Queue()
 
-
         else:
             
             # Try to receive initial data
@@ -181,10 +192,11 @@ while inputs:
                     print ('received returning processing signal from %s' % data, file=sys.stderr)
 
                     #Remove from inputs since we no longer expect a reply
-                    inputs.remove(s)
+                    #inputs.remove(s)
                     #Add into output channel to send new data
-                    if s not in outputs:
-                        outputs.append(s)
+                    #if s not in outputs:
+                    #    print("")
+                    #    outputs.append(s)
                     
                     #Get IP and indicate that this neighbor has been processed
                     ip_address = s.getpeername()[0]
@@ -233,10 +245,10 @@ while inputs:
 
                     ## ===== Process End for next iteration subroutine ===== ##
                     
-                    inputs.remove(s)
+                    #inputs.remove(s)
                     # Add to output channel for a response indicating we have processed timestamp signal
-                    if s not in outputs:
-                        outputs.append(s)
+                    #if s not in outputs:
+                    #    outputs.append(s)
 
             else: # ===== WIP ===== #
 
@@ -266,12 +278,12 @@ while inputs:
             next_msg = message_queues[s].get_nowait()
         except queue.Empty:
             # No messages in queue, but continue waiting in case a message pops up
-            print ('output queue for', s.getpeername(), 'is empty retrying...', file=sys.stderr)
+            # print ('output queue for', s.getpeername(), 'is empty retrying...', file=sys.stderr)
             continue
         else:
             # Once a valid message has been retrieved, process the message
             if ( next_msg == processed ):
-                print ('sending processed return to %s' % s.getpeername(), file=sys.stderr)
+                print ('sending processed return to %s at %s' % s.getpeername(), file=sys.stderr)
                 s.send(next_msg.encode())
 
             else:
@@ -283,6 +295,7 @@ while inputs:
             # We're either expecting new timestamped message or expecting processed return signal
             outputs.remove(s)
             if s not in inputs:
+                print("socket %s is put back into inputs" % s)
                 inputs.append(s)
 
     """
