@@ -51,7 +51,7 @@ pidb = {'R1': "169.254.86.232",
 PORT = 20000 
 THIS_IP = get_ip_address('eth0')
 #maximum iteration
-kmax = 100
+kmax = 10000
 
 #dictionary of neighbor sockets
 neighborSock = {}
@@ -75,7 +75,7 @@ while True:
 recvsocket.setblocking(0)
 recvsocket.listen(3) #scale later?
 
-inputFile = "./neighbors/" + sys.argv[1] 
+inputFile = sys.argv[1] 
 f = open(inputFile)
 
 #code block parses the neighbors input file. Change the lodb to pidb when actually implementing
@@ -108,8 +108,11 @@ for k, v in neighborSock.items():
 #We start by seeking out neighbors. some fail to accept connections, we wait for them to come online
 
 k = 1
+syncCount = 0
+readyToAdvance = False
+killProcess = False
 while k <= kmax:
-#	print >>sys.stderr, 'Waiting for neighbors to chime in'
+	#see which sockets are ready to be writting, read from and which are throwing exceptions
 	readable, writable, exceptional = select.select(inputs, outputs, inputs)
 
 	for s in readable:
@@ -123,38 +126,61 @@ while k <= kmax:
 			allConnected = all_have_connected(neighborSock)
 		else:
 			data = s.recv(1024)
-			print 'received ', data, ' from ', s.getpeername()
 			if data:
-				#if data == "-1":
-				#	print 'received kill message, shutting down process'
-				#	killProcess = True
-
 				#if the timestamp for this is not a duplicate, save it
+				print 'received ', data, ' from ', s.getpeername()
 				if int(data) > timeStamps[s.getpeername()[0]]:
 					timeStamps[s.getpeername()[0]] = int(data)
+					if int(data) >= k:
+						syncCount += 1
+			else:
+				#no data
+				print 'Socket ', s.getpeername(), 'is unresponsive, closing connection and shutting down.' 
+				killProcess = True
+				if s in outputs:
+					outputs.remove(s)
+				inputs.remove(s)
+				s.close()
 				
-				if s not in outputs:
-					outputs.append(s)
-
 				#do check for already having stored the timestamp for this neighbor
 				#TODO: handle a "no data" case 
 
-	print 'Checking timestamps...'
+	#check if we have updated timestamps from every neighbor
+	if syncCount == len(neighborSock):
+		readyToAdvance = True
+		syncCount = 0
+	elif syncCount > len(neighborSock):
+		print 'ERROR: syncCount greater than number of neighbors.'
+		print 'syncCount = ', syncCount
+		print 'num of neighbors = ', len(neighborSock)
+		exit(0)
+
+	"""
 	readyToAdvance = True
 	for n,v in timeStamps.items():
-		if v < k:							#TODO: decide whether this makes sense
+		if (v < k) or (v > k + 1):							#TODO: decide whether this makes sense
 			readyToAdvance = False
 			print 'v for ', n, '=', v 
-	
+	"""
+
+	#TODO: decide whether to remove all neighbors from output list until k increments, test
 	for s in writable:
 		if allConnected:
 			if readyToAdvance:
 				k += 1
 				print "increasing k"
 				readyToAdvance = False
+				for key,sock in neighborSock.items():
+					outputs.append(sock)
 			s.send(str(k))
-			print 'sending k=', k
-			outputs.remove(s)
+			print 'sending k=', k, ' to ', s.getpeername()
+			outputs.remove(s)	#removing from outputs until we get a new k value
 
-#	if killProcess:
-#		exit(0)
+	for s in exceptional:
+		print 'Socket', s.getpeername(), ' is throwing errors, turning it off and shutting down process'
+		killProcess = True
+		s.close()
+
+	if killProcess:
+		exit(0)
+
