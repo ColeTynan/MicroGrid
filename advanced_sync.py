@@ -107,10 +107,16 @@ for k, v in neighborSock.items():
 
 #We start by seeking out neighbors. some fail to accept connections, we wait for them to come online
 
+#timing
+start = time.time()
+
+#booleans and counters
 k = 1
 syncCount = 0
 readyToAdvance = False
 killProcess = False
+
+#our i/o while loop 
 while k <= kmax:
 	#see which sockets are ready to be writting, read from and which are throwing exceptions
 	readable, writable, exceptional = select.select(inputs, outputs, inputs)
@@ -128,11 +134,16 @@ while k <= kmax:
 			data = s.recv(1024)
 			if data:
 				#if the timestamp for this is not a duplicate, save it
-				print 'received ', data, ' from ', s.getpeername()
+				#print 'received ', data, ' from ', s.getpeername()
+				splitData = data.split(':')
+				data = int(splitData[len(splitData) - 1])					#in case multiple values were concatenated in the input buffer, split it up and use the most recently sent value
+
 				if int(data) > timeStamps[s.getpeername()[0]]:
+					#print 'timestamp for ', s.getpeername(), 'being updated to ', int(data)
 					timeStamps[s.getpeername()[0]] = int(data)
 					if int(data) >= k:
 						syncCount += 1
+						#print "sync count incremented to ", syncCount, ". K will increment when it is ", len(neighborSock)
 			else:
 				#no data
 				print 'Socket ', s.getpeername(), 'is unresponsive, closing connection and shutting down.' 
@@ -141,9 +152,6 @@ while k <= kmax:
 					outputs.remove(s)
 				inputs.remove(s)
 				s.close()
-				
-				#do check for already having stored the timestamp for this neighbor
-				#TODO: handle a "no data" case 
 
 	#check if we have updated timestamps from every neighbor
 	if syncCount == len(neighborSock):
@@ -155,32 +163,46 @@ while k <= kmax:
 		print 'num of neighbors = ', len(neighborSock)
 		exit(0)
 
-	"""
-	readyToAdvance = True
-	for n,v in timeStamps.items():
-		if (v < k) or (v > k + 1):							#TODO: decide whether this makes sense
-			readyToAdvance = False
-			print 'v for ', n, '=', v 
-	"""
-
-	#TODO: decide whether to remove all neighbors from output list until k increments, test
 	for s in writable:
-		if allConnected:
-			if readyToAdvance:
-				k += 1
-				print "increasing k"
-				readyToAdvance = False
-				for key,sock in neighborSock.items():
-					outputs.append(sock)
-			s.send(str(k))
-			print 'sending k=', k, ' to ', s.getpeername()
+			send_mssg = ':' + str(k)
+			s.send(send_mssg)
+		#	print 'sending k=', k, ' to ', s.getpeername()
 			outputs.remove(s)	#removing from outputs until we get a new k value
 
 	for s in exceptional:
 		print 'Socket', s.getpeername(), ' is throwing errors, turning it off and shutting down process'
-		killProcess = True
+		inputs.remove(s)
+		if s in outputs:
+			outputs.remove(s)
 		s.close()
+		killProcess = True
+
+	
+	if allConnected:
+		if readyToAdvance:
+			k += 1
+			readyToAdvance = False
+			for key,sock in neighborSock.items():
+				outputs.append(sock)
 
 	if killProcess:
-		exit(0)
+		for s in inputs:
+			inputs.remove(s)
+			if s in outputs:
+				outputs.remove(s)
+			s.close()
+		recvsocket.close()
+		break
+
+"""
+#output final time stamps (Debugging)
+print 'k for this machine ', THIS_IP, ': ', k
+print len(timeStamps)
+for key, value in timeStamps.items():
+	print key, ': ', value
+"""
+
+end = time.time()
+print 'Total time taken=', end - start
+
 
