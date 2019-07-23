@@ -1,12 +1,10 @@
 #!/bin/bash
 
-file='IP.txt'
-declare -a addresses
+#USAGE: ./activate command_to_send
 
-let count=0
+IPs='/mnt/c/Users/cole/Documents/Internship work/microgrid/sync/IP.txt'
+CMD=$1
+neigh=$2
 while read line; do
-	echo $line
-	addresses[$count]=$line
-	((count++))
-	
-done < $file
+	 `ssh pi@"$line" \'bash -s\'-- < "$CMD" --"$neigh"`
+done < "$IPs"

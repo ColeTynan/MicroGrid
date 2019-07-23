@@ -73,14 +73,12 @@ while True:
 		exit(0)
 
 recvsocket.setblocking(0)
-recvsocket.listen(3) #scale later?
+recvsocket.listen(3) 
 
 inputFile = sys.argv[1] 
 f = open(inputFile)
 
-#code block parses the neighbors input file. Change the lodb to pidb when actually implementing
-#initial probing for neighboring pis, if not found the program will simply continue on and wait for a connection
-
+#We start by seeking out neighbors. some fail to accept connections, we wait for them to come online
 for line in f:
 	newsock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 	try:
@@ -90,7 +88,7 @@ for line in f:
 		print 'Connection successful with', newsock.getpeername()
 		neighborSock[pidb[line]] = newsock
 	except Exception as e:
-		print 'Connection failure: ', e
+		print 'Connection failed with IP', pidb[line]
 		neighborSock[pidb[line]] = 0
 
 allConnected = all_have_connected(neighborSock)
@@ -105,7 +103,7 @@ for k, v in neighborSock.items():
 		inputs.append(v)
 		outputs.append(v)
 
-#We start by seeking out neighbors. some fail to accept connections, we wait for them to come online
+
 
 #timing
 start = time.time()
