@@ -1,10 +1,11 @@
 #!/bin/bash
-#!/usr/bin/expect
 
-IPs='/mnt/c/Users/jiami/Desktop/VSCode_srip/sync/IP.txt'
 file=$1
-FOLDER=$2
+IPs='/mnt/c/Users/jiami/Desktop/VSCode_srip/ip_list.txt'
+echo "Starting..."
 while read line; do
-	`scp "$file" pi@"$line":~/"$FOLDER"`
+	command="scp ${file} pi@${line}:~"
+	echo $command
+	eval $command
 done < "$IPs"
 echo "File sent"
