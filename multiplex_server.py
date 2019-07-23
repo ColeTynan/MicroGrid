@@ -30,6 +30,8 @@ server.listen(5)
 
 #Dict of IPs and their corresponding ports for the neighboring controllers
 neighbors = {}
+#Dict of connections that we need to connection to (Initially is the same as neighbors)
+neighboring_connections_dict = {}
 
 # === Subroutine to process neighbor file and initialize neighbors === #
 neighbor_file = open("neighbor_file.txt", "r")
@@ -37,6 +39,7 @@ for x in neighbor_file:
     string_parse = x.split(":")
     print("Neighbor:", string_parse)
     neighbors[string_parse[0]] = int(string_parse[1])
+    neighboring_connections_dict[string_parse[0]] = int(string_parse[1])
 # === End of subroutine === #
 neighbor_file.close()
 print (neighbors)
@@ -47,13 +50,17 @@ sep = '\n'
 processed = '#####'
 
 #Create dict between neighbors_ip mapping to true or false indication of processed status
-neighborIPs_processed = {}
+neighborsIP_processed = {}
+#Create dict between nieghbors_ip mapping to true or false indication of timestamp updated status
+neighborsIP_updated_timestamp = {}
+#List of IPs that we are currently connected to
+neighborsIP_connected = []
 
 #Create own timestamp for this device
 this_timestamp = 0
 
 #Create a list of neighbors and their associated timestamp that we get
-neighborIPs_timestamp = {}
+neighborsIP_timestamp = {}
 
 #Create a dict of IPs corresponding to output sockets
 IP_output_sockets = {}
@@ -79,44 +86,6 @@ totalSockets = inputs + outputs
 msg_received_count = 0
 
 #=====End of Variable initialization=====#
-
-#=====Start of Connection initialization with neighbors=====#
-# Only runs once on startup
-for ip_key, port_value  in neighbors.items():
-
-    #Create new socket for the correpsonding ip_key and port
-    server_address = (ip_key, port_value)
-    new_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-
-    #====Continually try to connect to the neighboring node using the socket we created====#
-    new_socket.settimeout(10)
-    while True:
-        try:
-            new_socket.connect(server_address)
-            break
-        except:
-            print ("Connection Failed, on %s port %s, retrying in 0.5s" % server_address, file=sys.stderr)
-            time.sleep(0.5)
-    #====Successful Connection====#
-
-    print( "Connection Success on %s port %s, continuing"
-            % server_address, file=sys.stderr )
-
-    #Give the connection a queue to contain data we want to send
-    message_queues[new_socket] = queue.Queue()
-    #In addition to connecting, we want to queue up the first
-    message_queues[new_socket].put(this_timestamp)
-
-    #Set non-blocking for select
-    new_socket.setblocking(0)
-
-    #Match ip key to the new socket in the output dict
-    IP_output_sockets[ip_key] = new_socket
-
-    #Add to outputs list for select
-    outputs.append(new_socket)
-#=====End of Connection Initialization with neighbors=====#
-
 # Debugs for output/input lists
 #print(outputs, file=sys.stderr)
 #print(inputs, file=sys.stderr)
@@ -126,6 +95,48 @@ iteration_count = -1
 
 #===== Main Program ====#
 while inputs:
+
+    #=====Start of Connection initialization with neighbors=====#
+    # Only runs on the remaining connections that we still need
+    for ip_key, port_value in neighboring_connections_dict.items():
+
+        #Create new socket for the correpsonding ip_key and port
+        server_address = (ip_key, port_value)
+        new_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+        #====Try to connect to the neighboring node using the socket we created====#
+        new_socket.settimeout(10)
+        try:
+            new_socket.connect(server_address)
+            continue
+        except:
+            print ("Connection Failed, on %s port %s, retrying in 0.5s" % server_address, file=sys.stderr)
+            time.sleep(0.5)
+        else:
+            #====Successful Connection====#
+            print( "Connection Success on %s port %s, continuing"
+                    % server_address, file=sys.stderr )
+
+            if ip_key not in neighborsIP_connected:
+                neighborsIP_connected.append(ip_key)
+
+            #Give the connection a queue to contain data we want to send
+            message_queues[new_socket] = queue.Queue()
+            #In addition to connecting, we want to queue up the first
+            message_queues[new_socket].put(this_timestamp)
+
+            #Set non-blocking for select
+            new_socket.setblocking(0)
+
+            #Match ip key to the new socket in the output dict
+            IP_output_sockets[ip_key] = new_socket
+
+            #Add to outputs list for select
+            outputs.append(new_socket)
+
+            #Remove this connection from the dictionary
+            del neighboring_connections_dict[ip_key]
+    #=====End of Connection Initialization with neighbors=====#
 
     iteration_count+=1
     readable, writable, exceptional = select.select(inputs, outputs, totalSockets)
@@ -153,7 +164,7 @@ while inputs:
     print("This_timestamp: ", this_timestamp)
     print("msg_recv_count", msg_received_count)
     print("length of neighbors", len(neighbors))
-    for ip, timestamp in neighborIPs_timestamp.items():
+    for ip, timestamp in neighborsIP_timestamp.items():
         print ("IP: ", ip)
         print ("timestamp: ", timestamp)
 
@@ -209,8 +220,9 @@ while inputs:
             #Get the IP address of this new connection
             # And add it as a neighbor and fill it with -1 to represent initial connection
             ip_address = connection.getpeername()[0]
-            neighborIPs_timestamp[ip_address] = -1
 
+            if ip_address not in neighborsIP_connected:
+                neighborsIP_connected.append(ip_address)
             # Map this IP to the input socket
             IP_input_sockets[ip_address] = connection
 
@@ -242,7 +254,7 @@ while inputs:
 
                     #Get IP and indicate that this neighbor has been processed
                     ip_address = s.getpeername()[0]
-                    neighborIPs_processed[ip_address] = True
+                    neighborsIP_processed[ip_address] = True
 
                 #If it is not a returning 'processed' signal then it must be data being sent and requires reading
                 else:
@@ -260,13 +272,27 @@ while inputs:
                     print ('received "%s" from %s' % (data, s.getpeername()), file=sys.stderr)
                     print ('socket name: %s' % s, file=sys.stderr)
 
-                    # Update new integer timestamp
                     ip_address = s.getpeername()[0]
-                    neighborIPs_timestamp[ip_address] = data
 
-                    #Put processed into message queue to send
-                    message_queues[s].put(processed)
+                    other_previous_timestamp = 0
+                    updated_timestamp = False
+                    try:
+                        other_previous_timestamp = neighborsIP_timestamp[ip_address]
+                        if ((data - other_previous_timestamp) == 1):
+                            updated_timestamp = True
+                    except KeyError:
+                        other_previous_timestamp = data
+                        updated = True
+                    else:
+                        if((data - other_previous_timestamp) == 1):
+                            updated_timestamp = True
                     
+                    if updated_timestamp:
+                        neighborsIP_updated_timestamp[ip_address] = True
+
+                    # Update new integer timestamp
+                    neighborsIP_timestamp[ip_address] = data
+
                     #Check if the new msg_received count is equal to the number of neighbors, if so move on to next iteration
                     msg_received_count += 1
                     
@@ -278,7 +304,7 @@ while inputs:
             else: # ===== WIP ===== #
 
                 # Interpret empty result as closed connection
-                print ('closing', client_address, 'after readitng no data', file=sys.stderr)
+                print ('closing', client_address, 'after reading no data', file=sys.stderr)
                 # Stop listening for input on the connection
                 # if s in outputs:
                 #     outputs.remove(s)
@@ -295,13 +321,13 @@ while inputs:
         print("Exiting...")
         exit(0)
 
-    if (msg_received_count == len(neighbors)):
+    if (msg_received_count == len(neighborsIP_connected)):
 
         received_all_timestamps = True
         all_neighbors_processed = True
 
         #===== Processing for next iteration =====#
-        for ip_key, timestamp in neighborIPs_timestamp.items():
+        for ip_key, timestamp in neighborsIP_timestamp.items():
 
             #Double check timestamps, if it is unequal, we skip the checks
             if (this_timestamp != timestamp):
@@ -312,20 +338,23 @@ while inputs:
                 received_all_timestamps = False
                 break
         
-        for ip_key, processed_value in neighborIPs_processed.items():
+        for ip_key, processed_bool in neighborsIP_processed.items():
 
-            if not processed_value:
+            if not processed_bool:
                 all_neighbors_processed = False
                 break
 
         if (received_all_timestamps and all_neighbors_processed):
             this_timestamp+=1
-            for ip_key, port_value in neighbors.items():
+            for ip_key in neighborsIP_connected:
 
                 # Queue up new iteration message into all the neighbors for sending
                 timestamp_output_socket = IP_output_sockets[ip_key]
                 message_queues[timestamp_output_socket].put( this_timestamp )
                 msg_received_count = 0
+
+                #Put processed into message queue to send
+                message_queues[s].put(processed)
 
     ## ===== Process End for next iteration subroutine ===== ##
 
