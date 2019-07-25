@@ -18,7 +18,7 @@ full_ip_address = full_ip_address.split(":")
 server_address = (full_ip_address[0], int(full_ip_address[1]))
 # == End of subroutine to get this device's IP address == #
 
-print ('starting up on %s port %s' % server_address, file=sys.stderr)
+#print ('starting up on %s port %s' % server_address, file=sys.stderr)
 server.bind(server_address)
 
 #Listen for incoming connections
@@ -30,10 +30,12 @@ server.listen(5)
 
 #Dict of IPs and their corresponding ports for the neighboring controllers
 neighbors = {}
-#Dict of connections that we need to connection to (Initially is the same as neighbors)
+#Dict of connections that we have the connection to (Initially empty)
 neighboring_connections_dict = {}
-#SEP (Upper level protocol to how to receive bytes bigger than initial set size)
-sep = '\n'
+#END (Upper level protocol to how to receive bytes bigger than initial set size)
+END = '\n'
+#SEP (Seperator between different pieces of information in the byte string that we send)
+SEP = ','
 #Processed (Protocol for moving forward only when we receive this signal)
 processed = '#####'
 
@@ -48,6 +50,15 @@ neighborsIP_timestamp = {}
 
 #Create own timestamp for this device
 this_timestamp = 0
+#Initialize the default outer loop val for this device (0 neutral)
+# 0 = Neutral (stay at current state), propogate neutral state
+# 1 = Switch to running state, propogate running signal
+# -1 = Switch to stop state, propogate stop signal
+this_outer_loop_propogate_signal = 0
+# Variable that determines the current state of the device
+# False = Not running
+# True = Running
+this_state_running = False
 
 #Create a dict of IPs corresponding to output sockets
 IP_output_sockets = {}
@@ -74,26 +85,25 @@ msg_received_count = 0
 
 #=====End of Variable initialization=====#
 # Debugs for output/input lists
-#print(outputs, file=sys.stderr)
-#print(inputs, file=sys.stderr)
+##print(outputs, file=sys.stderr)
+##print(inputs, file=sys.stderr)
 
 # === Subroutine to process neighbor file and initialize neighbors === #
 neighbor_file = open("neighbor_file.txt", "r")
 for x in neighbor_file:
     string_parse = x.split(":")
-    print("Neighbor:", string_parse)
+    #print("Neighbor:", string_parse)
     neighbors[string_parse[0]] = int(string_parse[1])
-    neighboring_connections_dict[string_parse[0]] = int(string_parse[1])
-    neighborsIP_processed_bool[string_parse[0]] = False
+    neighborsIP_processed_bool[string_parse[0]] = True
     neighborsIP_updated_timestamp_bool[string_parse[0]] = False
     neighborsIP_timestamp[string_parse[0]] = -1
 # === End of subroutine === #
 neighbor_file.close()
-print (neighbors)
+#print (neighbors)
 
 #=====Start of Connection initialization with neighbors=====#
 # Only runs on the remaining connections that we still need
-for ip_key, port_value in neighboring_connections_dict.items():
+for ip_key, port_value in neighbors.items():
 
     #Create new socket for the correpsonding ip_key and port
     server_address = (ip_key, port_value)
@@ -104,15 +114,14 @@ for ip_key, port_value in neighboring_connections_dict.items():
         try:
             new_socket.connect(server_address)
         except:
-            print ("Connection Failed, on %s port %s, retrying in 0.5s" % server_address, file=sys.stderr)
+            #print ("Connection Failed, on %s port %s, retrying in 0.5s" % server_address, file=sys.stderr)
             time.sleep(0.5)
         else:
             #====Successful Connection====#
-            print( "Connection Success on %s port %s, continuing"
-                    % server_address, file=sys.stderr )
+            #print( "Connection Success on %s port %s, continuing" % server_address, file=sys.stderr )
 
-            if ip_key not in neighborsIP_connected:
-                neighborsIP_connected.append(ip_key)
+            if ip_key not in neighborsIP_connected_list:
+                neighborsIP_connected_list.append(ip_key)
 
             #Give the connection a queue to contain data we want to send
             message_queues[new_socket] = queue.Queue()
@@ -128,8 +137,8 @@ for ip_key, port_value in neighboring_connections_dict.items():
             #Add to outputs list for select
             outputs.append(new_socket)
 
-            #Remove this connection from the dictionary
-            del neighboring_connections_dict[ip_key]
+            #Add this connection to the dictionary
+            neighboring_connections_dict[ip_key] = port_value
             break
     
 #=====End of Connection Initialization with neighbors=====#
@@ -138,40 +147,47 @@ for ip_key, port_value in neighboring_connections_dict.items():
 # Debug Var
 iteration_count = -1
 
+start = time.time()
 #===== Main Program ====#
 while inputs:
     iteration_count+=1
+
+    # Condition to check if this is running or not
+    if not this_state_running:
+        # TODO 
+
+
     readable, writable, exceptional = select.select(inputs, outputs, totalSockets)
-    print("   ")
-    print(iteration_count)
-    print("Readable:")
-    print(readable)
-    print("    ")
-    print("Inputs:")
-    print(inputs)
-    print("    ")
-    print("Outputs:")
-    print(outputs)
-    print("     ")
-    print("Writable:")
-    print(writable)
-    print("     ")
-    print("Message Queue:")
-    for socketr, queuer in message_queues.items():
-        print("Socket: ", socketr.getpeername()[0])
-        for elem in queuer.queue:
-            print("Queue Element:", elem)
-        print("    ")
-    print("     ")
-    print("This_timestamp: ", this_timestamp)
-    print("msg_recv_count", msg_received_count)
-    print("length of neighbors", len(neighbors))
-    for ip, timestamp in neighborsIP_timestamp.items():
-        print ("IP: ", ip)
-        print ("timestamp: ", timestamp)
+    #print("   ")
+    #print(iteration_count)
+    #print("Readable:")
+    #print(readable)
+    #print("    ")
+    #print("Inputs:")
+    #print(inputs)
+    #print("    ")
+    #print("Outputs:")
+    #print(outputs)
+    #print("     ")
+    #print("Writable:")
+    #print(writable)
+    #print("     ")
+    #print("Message Queue:")
+    #for socketr, queuer in message_queues.items():
+        #print("Socket: ", socketr.getpeername()[0])
+    #    for elem in queuer.queue:
+            #print("Queue Element:", elem)
+        #print("    ")
+    #print("     ")
+    #print("This_timestamp: ", this_timestamp)
+    #print("msg_recv_count", msg_received_count)
+    #print("length of neighbors", len(neighbors))
+    #for ip, timestamp in neighborsIP_timestamp.items():
+        #print ("IP: ", ip)
+        #print ("timestamp: ", timestamp)
 
     #if(iteration_count == 10000):
-    #    print("Exiting...")
+    #    #print("Exiting...")
     #    exit(0)
 
     '''
@@ -211,7 +227,7 @@ while inputs:
             # A "readable" server socket is ready to accept a connection
             connection, client_address = s.accept()
 
-            print ('new connection from', client_address, file=sys.stderr)
+            #print ('new connection from', client_address, file=sys.stderr)
 
             # Set non-blocking for select
             connection.setblocking(0)
@@ -237,21 +253,43 @@ while inputs:
             data = s.recv(1024)
 
             if data:
-                print(data)
+                #print(data)
                 data = data.decode()
-                processed_data = data.split(sep)
-                processed_data = processed_data[0]
-                print("processed_data:", processed_data)
+                data_strip_END = data.replace(END, "")
+                array_of_vals = data_strip_END.split(SEP)
+                processed_data = array_of_vals[0]
+                other_outer_loop_propogate_signal = array_of_vals[1]
+                #print("processed_data:", processed_data)
+
+                #Process the other_outer_loop_bool and determine which is the right one to keep
+                if (other_outer_loop_propogate_signal != 0):
+                    if ( other_outer_loop_propogate_signal == 1 ):
+                        if not this_state_running:
+                            this_outer_loop_propogate_signal = 1
+                        else:
+                            this_outer_loop_propogate_signal = 0
+                        this_state_running = True
+                    else if( other_outer_loop_val == -1 ):
+                        if this_state_running:
+                            this_outer_loop_propogate_signal = -1
+                        else:
+                            this_outer_loop_propogate_signal = 0
+                        this_state_running = -1
+                    else:
+                        # This should never run, propogate signal should be -1, 0 , 1
+                        print("ERROR IN Propogate Signal")
+                        exit(-1)
+                
                 #Check if the data we received corresponding to a returning 'processed' signal
                 if (processed_data == processed):
 
-                    print ('received returning processing signal from %s' % data, file=sys.stderr)
+                    #print ('received returning processing signal from %s' % data, file=sys.stderr)
 
                     #Remove from inputs since we no longer expect a reply
                     inputs.remove(s)
                     #Add into output channel to send new data
                     if s not in outputs:
-                        print("Socket is put back into outputs from processed")
+                        #print("Socket is put back into outputs from processed")
                         outputs.append(s)
 
                     #Get IP and indicate that this neighbor has been processed
@@ -262,8 +300,8 @@ while inputs:
                 else:
 
                     # Loop to receive the complete message
-                    print("Data: ",data)
-                    while sep not in data:
+                    #print("Data: ",data)
+                    while END not in data:
                         receive = s.recv(256)
                         receive = receive.decode()
                         data += receive
@@ -271,7 +309,7 @@ while inputs:
                     # Parse into integer #
                     data = int(data)
 
-                    print ('received "%s" from %s' % (data, s.getpeername()), file=sys.stderr)
+                    #print ('received "%s" from %s' % (data, s.getpeername()), file=sys.stderr)
 
                     ip_address = s.getpeername()[0]
 
@@ -303,7 +341,7 @@ while inputs:
             else: # ===== WIP ===== #
 
                 # Interpret empty result as closed connection
-                print ('closing', client_address, 'after reading no data', file=sys.stderr)
+                #print ('closing', client_address, 'after reading no data', file=sys.stderr)
                 # Stop listening for input on the connection
                 # if s in outputs:
                 #     outputs.remove(s)
@@ -316,8 +354,12 @@ while inputs:
 
     ## ===== Process Start for next iteration subroutine ===== ##
     
-    if (this_timestamp == 1000):
-        print("Exiting...")
+    if (this_timestamp == 10000):
+        end = time.time()
+        difference = end - start
+        print("Iterations: ", this_timestamp)
+        print("TIME: ", difference)
+        #print("Exiting...")
         exit(0)
 
     if (msg_received_count == len(neighbors)):
@@ -327,6 +369,7 @@ while inputs:
 
         #===== Processing for next iteration =====#
         for ip_key, timestamp in neighborsIP_timestamp.items():
+            #print("IPKEY:", ip_key, "TIMESTAMP:", timestamp)
 
             #Double check timestamps, if it is unequal, we skip the checks
             if (this_timestamp != timestamp):
@@ -339,13 +382,14 @@ while inputs:
         
         for ip_key, processed_bool in neighborsIP_processed_bool.items():
 
+            #print("IPKEY:", ip_key, "processed_bool:", processed_bool)
             if not processed_bool:
                 all_neighbors_processed = False
                 break
 
         if (received_all_timestamps and all_neighbors_processed):
             this_timestamp+=1
-            for ip_key, port_value in neighbors:
+            for ip_key, port_value in neighbors.items():
 
                 # Queue up new iteration message into all the neighbors for sending
                 timestamp_output_socket = IP_output_sockets[ip_key]
@@ -373,26 +417,27 @@ while inputs:
             next_msg = message_queues[s].get_nowait()
         except queue.Empty:
             # No messages in queue, but continue waiting in case a message pops up
-            # print ('output queue for', s.getpeername(), 'is empty retrying...', file=sys.stderr)
+            # #print ('output queue for', s.getpeername(), 'is empty retrying...', file=sys.stderr)
             continue
         else:
-            print("NextMSG: ", next_msg)
-            print("Processed: ", processed)
+            #print("NextMSG: ", next_msg)
+            #print("Processed: ", processed)
             # Once a valid message has been retrieved, process the message
             if ( next_msg == processed ):
-                print ('sending processed return %s to %s' % (next_msg, s.getpeername()), file=sys.stderr)
+                #print ('sending processed return %s to %s' % (next_msg, s.getpeername()), file=sys.stderr)
                 s.send(next_msg.encode())
 
             else:
-                print ('sending "%s" to %s' % (next_msg, s.getpeername()), file=sys.stderr)
-                send_msg = (str(next_msg) + sep).encode()
+                #print ('sending "%s" to %s' % (next_msg, s.getpeername()), file=sys.stderr)
+                send_msg = (str(next_msg) + SEP + str(this_outer_loop_propogate_signal) + END).encode()
+                this_outer_loop_propogate_signal = 0
                 s.send(send_msg)
 
             #Remove from output queue back to input
             # We're either expecting new timestamped message or expecting processed return signal
             outputs.remove(s)
             if s not in inputs:
-                print("socket %s is put back into inputs", s)
+                #print("socket %s is put back into inputs", s)
                 inputs.append(s)
 
     """
@@ -401,7 +446,7 @@ while inputs:
     """
 
     for s in exceptional:
-        print ('handling exceptional condition for', s.getpeername(), file=sys.stderr)
+        #print ('handling exceptional condition for', s.getpeername(), file=sys.stderr)
         #Stop listening for input on the connection
         totalSockets.remove(s)
         if s in inputs:
