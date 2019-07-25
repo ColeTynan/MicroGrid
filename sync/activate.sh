@@ -1,10 +1,10 @@
 #!/bin/bash
 
-#USAGE: ./activate command_to_send
+#USAGE: ./activate script_to_run 
 
 IPs='/mnt/c/Users/cole/Documents/Internship work/microgrid/sync/IP.txt'
-CMD=$1
-neigh=$2
+script=$1
+param=$2
 while read line; do
-	 `ssh pi@"$line" \'bash -s\'-- < "$CMD" --"$neigh"`
+	 `ssh pi@"$line" python -`
 done < "$IPs"

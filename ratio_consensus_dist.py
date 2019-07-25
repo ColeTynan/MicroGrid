@@ -119,8 +119,7 @@ for k, v in neighbors.items():
 #timing
 
 #booleans and counters
-t = 0		#TODO: make this an input parameter, eventaully want to be able to read from an XVL file
-
+t = 0		#TODO: make this an input parameter, eventually want to be able to read from an XVL file
 syncCount = 0
 readyToAdvance = False
 killProcess = False
