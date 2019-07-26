@@ -80,14 +80,15 @@ f = open(inputFile)
 
 #TODO: set up parsing for information in data file about the DER (if its in I, gmin, gmax, etc) for simplified, just if its the "timer" or not
 
-
-
 #Read the info for this specific DER
 #specifies gmin, gmax, if the DER is in I, etc. 
 #FORMAT: gmin gmax In_I_bool(0 or 1) |I| 
+inI = False
 info = f.readline()
 info = info.split()
-inI = info[2]
+if int(info[2]) != 0:
+	inI = True
+print 'inI = ', inI
 #TODO: in Ratio Consensus, in the case of multiple DERs in I, there needs to be a method of deciding which DER will be the timer
 
 #We start by seeking out neighbors. some fail to accept connections, we wait for them to come online
@@ -116,53 +117,57 @@ for k, v in neighborSock.items():
 		outputs.append(v)
 
 #timing
-print 'Starting timer...'
+#print 'Starting timer...'
 start = time.time()
 
 #booleans and counters
 t = 0						#counter for the time intervals
 tmax = 10				#the number of intervals
-syncCount = 0
-killProcess = False
-GO = False
-RESET = False
-goMessage = ":GO"
-noGoMessage = ":NO_GO"
-SEND_NO_GO = False
-SEND_GO = False
+goMessage = "GO"
+noGoMessage = "NO_GO"
 
 #our i/o while loop 
 while t <= tmax:
 	k = 1
 	readyToAdvance = False
+	syncCount = 0
+	killProcess = False
+	GO = False
+	RESET = True
+	SEND_NO_GO = False
+	SEND_GO = False
+	startTime = 0
+	endTime = 0
+
 	#Timed loop
-	while True:	
-		readable, writable, exceptional = select.select(inputs, outputs, inputs)			#see which sockets are ready to be writting, read from and which are throwing exceptions
-		#resetting the whole thing
+	while endTime - startTime <= 1.0:	
 		if RESET:
+			startTime = 0
+			endTime = 0
 			if allConnected:
 				for key,sock in neighborSock.items():
 					if sock not in outputs:
 						outputs.append(sock)
 			k = 1
 			t = 0
-			for key,value in timeStamps.items():
-				timeStamps.update({key, -1})
+			for key in timeStamps.keys():
+				timeStamps[key] = -1
 			SEND_GO = False
 			SEND_NO_GO = False
 			GO = False
 			RESET = False
-			continue
 		
+		readable, writable, exceptional = select.select(inputs, outputs, inputs)			#see which sockets are ready to be writting, read from and which are throwing exceptions
+		#resetting the whole thing
+	
 		if inI:		#If this der is the timer, send the GO signal
 			if not GO and allConnected:
+				print 'Timer is sending GO signal'
 				time.sleep(1)
 				SEND_GO = True
 				GO = True
-				startInner = time.time()
-			if GO and (time.time() - startInner) > 1:
-				SEND_NO_GO = True
-				GO = False
+				#SEND_NO_GO = True
+			#	GO = False
 					
 		for s in readable:
 			if s is recvsocket:
@@ -181,7 +186,7 @@ while t <= tmax:
 					data = data.split(':')
 					#also split by '/' separator in future
 					for message in data:
-						print 'received ', message
+						print 'received ', message, 'from ', s.getpeername()
 						if GO:
 							if message == noGoMessage:
 								GO = False
@@ -197,14 +202,12 @@ while t <= tmax:
 
 						try: 
 							if int(message) > timeStamps[s.getpeername()[0]]:
-								#print 'timestamp for ', s.getpeername(), 'being updated to ', int(data)
+								print 'timestamp for ', s.getpeername(), 'being updated to ', int(data)
 								timeStamps[s.getpeername()[0]] = int(message)
-								if (int(message) >= k) and (int(message) <= k + 1):
-									syncCount += 1
-								elif int(message) > k + 1:
+								if int(message) > k + 1:
 									print "Out of sync at k = ", k, ", read ", int(message), "from ", s.getpeername()
 									killProcess = True
-									#print "sync count incremented to ", syncCount, ". K will increment when it is ", len(neighborSock)
+									print "sync count incremented to ", syncCount, ". K will increment when it is ", len(neighborSock)
 						except Exception as e:
 							print "Caught exception in parsing messages: ", e
 					#data = int(splitData[len(splitData) - 1])					#in case multiple values were concatenated in the input buffer, split it up and use the most recently sent value
@@ -216,9 +219,25 @@ while t <= tmax:
 						outputs.remove(s)
 					inputs.remove(s)
 					s.close()
-		#END receiving block
 
+		#END receiving block
+		if GO and SEND_GO:
+			startTime = time.time()
+
+		syncCounter = 0
 		#check if we have updated timestamps from every neighbor
+		for sock, stamp in timeStamps.items():
+			if (stamp >= k):
+				syncCounter += 1
+		if syncCounter == len(neighborSock):
+			readyToAdvance = True
+		elif syncCounter > len(neighborSock):
+			print 'ERROR: syncCount greater than number of neighbors.'
+			print 'syncCount = ', syncCount
+			print 'num of neighbors = ', len(neighborSock)
+			killProcess = True 
+		
+		"""
 		if syncCount == len(neighborSock):
 			readyToAdvance = True
 			syncCount = 0
@@ -227,20 +246,27 @@ while t <= tmax:
 			print 'syncCount = ', syncCount
 			print 'num of neighbors = ', len(neighborSock)
 			exit(0)
+		"""
 
 		#message sending
 		for s in writable:
 			if GO:	
 				if SEND_GO:
-					s.send(goMessage)
+					s.send(":" + goMessage)
 				send_mssg = ":" + str(k)	
+				print 'Sending ', send_mssg, ' to ', s.getpeername()
 				s.send(send_mssg)
+				outputs.remove(s)
 
 			if SEND_NO_GO:
-				s.send(noGoMessage)
+				s.send(":" + noGoMessage)
 		#End sending loop
 		SEND_NO_GO = False
 		SEND_GO = False
+
+		#if currently running, the program will save the end time
+		if GO:
+			endTime = time.time()
 
 		#Error catching code block
 		for s in exceptional:
@@ -259,7 +285,6 @@ while t <= tmax:
 				readyToAdvance = False
 				for key,sock in neighborSock.items():
 					outputs.append(sock)
-	
 
 		#End processes check
 		if killProcess:
@@ -270,11 +295,11 @@ while t <= tmax:
 				s.close()
 			recvsocket.close()
 			break
-
+			
 	print 'Ending t = ', t , ' with k = ', k
-	print 'Start time = ', startInner-start, 'seconds from start of outer loop'
-	print 'EndTime = ', endInner - start, ' seconds'
-	print 'time elapsed = ', endInner - startInner, ' seconds'
+	print 'Start time = ', startTime-start, 'seconds from start of outer loop'
+	print 'EndTime = ', endTime - start, ' seconds'
+	print 'time elapsed = ',  endTime - startTime, ' seconds'
 	t += 1
 
 #output final time stamps (Debugging)
@@ -283,6 +308,7 @@ print len(timeStamps)
 for key, value in timeStamps.items():
 	print key, ': ', value
 
+"""
 end = time.time()
 print 'Total time taken=', end - start, ' seconds.'
-
+"""
