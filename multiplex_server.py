@@ -153,7 +153,7 @@ while inputs:
     iteration_count+=1
 
     # Condition to check if this is running or not
-    if not this_state_running:
+    #if not this_state_running:
         # TODO 
 
 
@@ -266,15 +266,17 @@ while inputs:
                     if ( other_outer_loop_propogate_signal == 1 ):
                         if not this_state_running:
                             this_outer_loop_propogate_signal = 1
+                            this_state_running = True
                         else:
                             this_outer_loop_propogate_signal = 0
-                        this_state_running = True
-                    else if( other_outer_loop_val == -1 ):
+                            this_state_running = True
+                    elif( other_outer_loop_propogate_signal == -1 ):
                         if this_state_running:
                             this_outer_loop_propogate_signal = -1
+                            this_state_running = False
                         else:
                             this_outer_loop_propogate_signal = 0
-                        this_state_running = -1
+                            this_state_running = False
                     else:
                         # This should never run, propogate signal should be -1, 0 , 1
                         print("ERROR IN Propogate Signal")
@@ -353,15 +355,6 @@ while inputs:
                 # del message_queues[s]
 
     ## ===== Process Start for next iteration subroutine ===== ##
-    
-    if (this_timestamp == 10000):
-        end = time.time()
-        difference = end - start
-        print("Iterations: ", this_timestamp)
-        print("TIME: ", difference)
-        #print("Exiting...")
-        exit(0)
-
     if (msg_received_count == len(neighbors)):
 
         received_all_timestamps = True
@@ -444,6 +437,15 @@ while inputs:
     ===Exceptional===
     1) Error with socket, close the socket
     """
+    
+    if (this_timestamp == 10000):
+        end = time.time()
+        difference = end - start
+        print("Iterations: ", this_timestamp)
+        print("TIME: ", difference)
+        #print("Exiting...")
+        exit(0)
+
 
     for s in exceptional:
         #print ('handling exceptional condition for', s.getpeername(), file=sys.stderr)
