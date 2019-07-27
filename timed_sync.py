@@ -55,6 +55,8 @@ kmax = 10000
 
 #dictionary of neighbor sockets
 neighborSock = {}
+#dictionary keyed by neighbor sockets, values are bool, that show if this neighbor is ready to accept input from yet
+readyNeighbor = {}
 #timestamps for each neighbor
 timeStamps = {}
 
@@ -97,6 +99,7 @@ for line in f:
 	try:
 		line = line.rstrip('\n')
 		timeStamps[pidb[line]] = -1				#TODO: change timeStamp to a dictionary of lists to store the placeholder y/z values
+		readyNeighbor[pidb[line]] = False
 		newsock.connect((pidb[line],PORT))
 		print 'Connection successful with', newsock.getpeername()
 		neighborSock[pidb[line]] = newsock
@@ -129,15 +132,10 @@ noGoMessage = "NO_GO"
 #our i/o while loop 
 while t <= tmax:
 	k = 1
-	readyToAdvance = False
-	syncCount = 0
-	killProcess = False
-	GO = False
 	RESET = True
-	SEND_NO_GO = False
-	SEND_GO = False
-	startTime = 0
-	endTime = 0
+	startTime = time.time()
+	endTime = startTime
+	
 
 	#Timed loop
 	while endTime - startTime <= 1.0:	
@@ -146,18 +144,21 @@ while t <= tmax:
 			endTime = 0
 			if allConnected:
 				for key,sock in neighborSock.items():
+					readyNeighbor[key] = False
 					if sock not in outputs:
 						outputs.append(sock)
 			k = 1
-			t = 0
 			for key in timeStamps.keys():
 				timeStamps[key] = -1
 			SEND_GO = False
 			SEND_NO_GO = False
 			GO = False
+			killProcess = False
 			RESET = False
+			readyToAdvance = False
+		#END Reset
 		
-		readable, writable, exceptional = select.select(inputs, outputs, inputs)			#see which sockets are ready to be writting, read from and which are throwing exceptions
+		readable, writable, exceptional = select.select(inputs, outputs, inputs, 1)			#see which sockets are ready to be writting, read from and which are throwing exceptions
 		#resetting the whole thing
 	
 		if inI:		#If this der is the timer, send the GO signal
@@ -187,29 +188,30 @@ while t <= tmax:
 					#also split by '/' separator in future
 					for message in data:
 						print 'received ', message, 'from ', s.getpeername()
-						if GO:
-							if message == noGoMessage:
+						if message == noGoMessage:
+							readyNeighbor[s.getpeername()[0]] = False
+							if GO:
 								GO = False
 								RESET = True
 								SEND_NO_GO = True
-						else:												#if the loop isnt currently calculating data
-							if message == goMessage:							#GO flag received, now we can immediately begin performing ratio consensus
+						if message == goMessage:							#GO flag received, now we can immediately begin performing ratio consensus
+							readyNeighbor[s.getpeername()[0]] = True
+							if not GO:
 								if allConnected:
 									GO = True
 									SEND_GO = True
 								else:
 									SEND_NO_GO = True
-
-						try: 
-							if int(message) > timeStamps[s.getpeername()[0]]:
-								print 'timestamp for ', s.getpeername(), 'being updated to ', int(data)
-								timeStamps[s.getpeername()[0]] = int(message)
-								if int(message) > k + 1:
-									print "Out of sync at k = ", k, ", read ", int(message), "from ", s.getpeername()
-									killProcess = True
-									print "sync count incremented to ", syncCount, ". K will increment when it is ", len(neighborSock)
-						except Exception as e:
-							print "Caught exception in parsing messages: ", e
+						if readyNeighbor[s.getpeername()[0]]:									#if this neighbor has sent the GO flag, we will start reading its input
+							try: 
+								if int(message) > timeStamps[s.getpeername()[0]]:
+									print 'timestamp for ', s.getpeername(), 'being updated to ', int(message)
+									timeStamps[s.getpeername()[0]] = int(message)
+									if int(message) > k + 1:
+										print "Out of sync at k = ", k, ", read ", int(message), "from ", s.getpeername()
+										killProcess = True
+							except Exception as e:
+								print "Caught exception in parsing messages: ", e
 					#data = int(splitData[len(splitData) - 1])					#in case multiple values were concatenated in the input buffer, split it up and use the most recently sent value
 				else:
 					#no data
@@ -229,14 +231,15 @@ while t <= tmax:
 		for sock, stamp in timeStamps.items():
 			if (stamp >= k):
 				syncCounter += 1
+				print "sync count incremented to ", syncCounter, ". K will increment when it is ", len(neighborSock)
 		if syncCounter == len(neighborSock):
 			readyToAdvance = True
 		elif syncCounter > len(neighborSock):
 			print 'ERROR: syncCount greater than number of neighbors.'
-			print 'syncCount = ', syncCount
+			print 'syncCount = ', syncCounter
 			print 'num of neighbors = ', len(neighborSock)
 			killProcess = True 
-		
+
 		"""
 		if syncCount == len(neighborSock):
 			readyToAdvance = True
@@ -287,7 +290,7 @@ while t <= tmax:
 					outputs.append(sock)
 
 		#End processes check
-		if killProcess:
+		if killProcess:		
 			for s in inputs:
 				inputs.remove(s)
 				if s in outputs:
