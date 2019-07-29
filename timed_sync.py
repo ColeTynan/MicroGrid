@@ -55,6 +55,8 @@ kmax = 10000
 
 #dictionary of neighbor sockets
 neighborSock = {}
+#dictionary keyed by neighbor sockets, values are bool, that show if this neighbor is ready to accept input from yet
+readyNeighbor = {}
 #timestamps for each neighbor
 timeStamps = {}
 #Sent Disconnection link for all neighbors
