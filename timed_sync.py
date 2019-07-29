@@ -1,13 +1,13 @@
 #Timed Sync: Handles synchronization between a variable network of RPis. Takes an input file as a commmand line param, which houses the Labels (e.g. R1\n R2) of the neighbors
 #neighbors of the machine by passing an input file containing all the neighbors via the command line.
 
+import fcntl
+import Queue
 import select
 import socket
-import sys
-import Queue
-import time
-import fcntl
 import struct
+import sys
+import time
 
 #TODO: create structure for housing information for each neighbor
 
@@ -57,6 +57,8 @@ kmax = 10000
 neighborSock = {}
 #timestamps for each neighbor
 timeStamps = {}
+#Sent Disconnection link for all neighbors
+disconnectNeighbors = {}
 
 #use this socket to receive the incoming connections
 recvsocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -97,6 +99,7 @@ for line in f:
 	try:
 		line = line.rstrip('\n')
 		timeStamps[pidb[line]] = -1				#TODO: change timeStamp to a dictionary of lists to store the placeholder y/z values
+		disconnectNeighbors[pidb[line]] = False
 		newsock.connect((pidb[line],PORT))
 		print 'Connection successful with', newsock.getpeername()
 		neighborSock[pidb[line]] = newsock
@@ -121,186 +124,165 @@ for k, v in neighborSock.items():
 start = time.time()
 
 #booleans and counters
-t = 0						#counter for the time intervals
+t = 0					#counter for the time intervals
 tmax = 10				#the number of intervals
-goMessage = "GO"
-noGoMessage = "NO_GO"
+next_t = False			#Buffer to send the canceling t signal to the next machines required for both timer and regular nodes
+k = 1
+readyToAdvance = False
+syncCount = 0
+killProcess = False
+
+#=== Current Signal represents the state of this machine === #
+#-1 = Stop
+# 0 = Start
+# 1 = Reset
+current_signal = -1
+
+startTime = 0
+endTime = 0
+
+not_all_disconnected = True
 
 #our i/o while loop 
-while t <= tmax:
-	k = 1
-	readyToAdvance = False
-	syncCount = 0
-	killProcess = False
-	GO = False
-	RESET = True
-	SEND_NO_GO = False
-	SEND_GO = False
-	startTime = 0
-	endTime = 0
+while not_all_disconnected:
 
-	#Timed loop
-	while endTime - startTime <= 1.0:	
-		if RESET:
-			startTime = 0
-			endTime = 0
-			if allConnected:
-				for key,sock in neighborSock.items():
-					if sock not in outputs:
-						outputs.append(sock)
-			k = 1
-			t = 0
-			for key in timeStamps.keys():
-				timeStamps[key] = -1
-			SEND_GO = False
-			SEND_NO_GO = False
-			GO = False
-			RESET = False
-		
-		readable, writable, exceptional = select.select(inputs, outputs, inputs)			#see which sockets are ready to be writting, read from and which are throwing exceptions
-		#resetting the whole thing
-	
-		if inI:		#If this der is the timer, send the GO signal
-			if not GO and allConnected:
-				print 'Timer is sending GO signal'
-				time.sleep(1)
-				SEND_GO = True
-				GO = True
-				#SEND_NO_GO = True
-			#	GO = False
-					
-		for s in readable:
-			if s is recvsocket:
-				conn, client_address = s.accept()
-				print >>sys.stderr, 'new connection with ', client_address, ' established'
-				conn.setblocking(0)
-				neighborSock[client_address[0]] = conn
-				inputs.append(conn)	
-				outputs.append(conn)
-				allConnected = all_have_connected(neighborSock)
-			else:
-				data = s.recv(1024)
-				if data:	
-					#if the timestamp for this is not a duplicate, save it
-					#print 'received ', data, ' from ', s.getpeername()
-					data = data.split(':')
-					#also split by '/' separator in future
-					for message in data:
-						print 'received ', message, 'from ', s.getpeername()
-						if GO:
-							if message == noGoMessage:
-								GO = False
-								RESET = True
-								SEND_NO_GO = True
-						else:												#if the loop isnt currently calculating data
-							if message == goMessage:							#GO flag received, now we can immediately begin performing ratio consensus
-								if allConnected:
-									GO = True
-									SEND_GO = True
-								else:
-									SEND_NO_GO = True
-
-						try: 
-							if int(message) > timeStamps[s.getpeername()[0]]:
-								print 'timestamp for ', s.getpeername(), 'being updated to ', int(data)
-								timeStamps[s.getpeername()[0]] = int(message)
-								if int(message) > k + 1:
-									print "Out of sync at k = ", k, ", read ", int(message), "from ", s.getpeername()
-									killProcess = True
-									print "sync count incremented to ", syncCount, ". K will increment when it is ", len(neighborSock)
-						except Exception as e:
-							print "Caught exception in parsing messages: ", e
-					#data = int(splitData[len(splitData) - 1])					#in case multiple values were concatenated in the input buffer, split it up and use the most recently sent value
-				else:
-					#no data
-					print 'Socket ', s.getpeername(), 'is unresponsive, closing connection and shutting down.' 
-					killProcess = True
-					if s in outputs:
-						outputs.remove(s)
-					inputs.remove(s)
-					s.close()
-
-		#END receiving block
-		if GO and SEND_GO:
+	if inI and all_have_connected and t != tmax:
+		current_signal = 0
+		endTime = time.time()
+		if (endTime - startTime) >= 1:
+			t+=1
 			startTime = time.time()
+			current_signal = 1
+	
+	if current_signal == 1:
+		if allConnected:
+			for key,sock in neighborSock.items():
+				if sock not in outputs:
+					outputs.append(sock)
+		for key in timeStamps.keys():
+			timeStamps[key] = -1
+		current_signal = 0
+		k = 1
+	
+	if t == tmax:
+		if allConnected:
+			for key,sock in neighborSock.items():
+				if sock not in outputs:
+					outputs.append(sock)
 
-		syncCounter = 0
-		#check if we have updated timestamps from every neighbor
-		for sock, stamp in timeStamps.items():
-			if (stamp >= k):
-				syncCounter += 1
-		if syncCounter == len(neighborSock):
-			readyToAdvance = True
-		elif syncCounter > len(neighborSock):
-			print 'ERROR: syncCount greater than number of neighbors.'
-			print 'syncCount = ', syncCount
-			print 'num of neighbors = ', len(neighborSock)
-			killProcess = True 
-		
-		"""
-		if syncCount == len(neighborSock):
-			readyToAdvance = True
-			syncCount = 0
-		elif syncCount > len(neighborSock):
-			print 'ERROR: syncCount greater than number of neighbors.'
-			print 'syncCount = ', syncCount
-			print 'num of neighbors = ', len(neighborSock)
-			exit(0)
-		"""
 
-		#message sending
-		for s in writable:
-			if GO:	
-				if SEND_GO:
-					s.send(":" + goMessage)
-				send_mssg = ":" + str(k)	
-				print 'Sending ', send_mssg, ' to ', s.getpeername()
-				s.send(send_mssg)
-				outputs.remove(s)
+	readable, writable, exceptional = select.select(inputs, outputs, inputs)			#see which sockets are ready to be writting, read from and which are throwing exceptions
+	#resetting the whole thing
+			
+	for s in readable:
+		if s is recvsocket:
+			conn, client_address = s.accept()
+			print >>sys.stderr, 'new connection with ', client_address, ' established'
+			conn.setblocking(0)
+			neighborSock[client_address[0]] = conn
+			inputs.append(conn)	
+			outputs.append(conn)
+			allConnected = all_have_connected(neighborSock)
+		else:
+			data = s.recv(1024)
+			if data:	
+				#if the timestamp for this is not a duplicate, save it
+				#print 'received ', data, ' from ', s.getpeername()
+				#FORMAT: t, current_signal, k, ____
+				split_data = data.split(':')
+				#also split by '/' separator in future
+				print 'received ', data, 'from ', s.getpeername()
+				other_t = int(split_data[0])
+				other_k = int(split_data[1])
+				other_signal = int(split_data[2])
 
-			if SEND_NO_GO:
-				s.send(":" + noGoMessage)
-		#End sending loop
-		SEND_NO_GO = False
-		SEND_GO = False
+				try: 
+					ip_address = s.getpeername()[0]
+					#Update T
+					if not inI and (other_t > t):
+						t = other_t
+						#Change current signal to reset only if we received a signal from t+1 that we are starting a new second
+						if other_signal == 1:
+							current_signal = 1
+					#Update K
+					if other_k > timeStamps[ip_address] and t == other_t:
+						print 'timestamp for ', s.getpeername(), 'being updated to ', other_k
+						timeStamps[ip_address] = other_k
+						if other_k > k + 1:
+							print "Out of sync at k = ", k, ", read ", other_k , "from ", s.getpeername()
+							killProcess = True
+							print "sync count incremented to ", syncCount, ". K will increment when it is ", len(neighborSock)
+					
+				except Exception as e:
+					print "Caught exception in parsing messages: ", e
+			else:
+				#no data
+				print 'Socket ', s.getpeername(), 'is unresponsive, closing connection and shutting down.' 
+				killProcess = True
+				if s in outputs:
+					outputs.remove(s)
+				inputs.remove(s)
+				s.close()
 
-		#if currently running, the program will save the end time
-		if GO:
-			endTime = time.time()
+	syncCounter = 0
+	#check if we have updated timestamps from every neighbor
+	for sock, stamp in timeStamps.items():
+		if (stamp >= k):
+			syncCounter += 1
+	if syncCounter == len(neighborSock):
+		readyToAdvance = True
+	elif syncCounter > len(neighborSock):
+		print 'ERROR: syncCount greater than number of neighbors.'
+		print 'syncCount = ', syncCount
+		print 'num of neighbors = ', len(neighborSock)
+		killProcess = True 
+	#message sending
+	for s in writable:
+		if t == tmax:
+			disconnectNeighbors[s.getpeername()[0]] = True
+		send_msg = str(t) + ":" + str(k) + ":" + str(current_signal)
+		print 'Sending ', send_msg, ' to ', s.getpeername()
+		s.send(send_msg)
+		outputs.remove(s)
 
-		#Error catching code block
-		for s in exceptional:
-			print 'Socket', s.getpeername(), ' is throwing errors, turning it off and shutting down process'
+	#Check for sent all disconnections
+	if all_true(disconnectNeighbors):
+		not_all_disconnected = False
+
+	#Error catching code block
+	for s in exceptional:
+		print 'Socket', s.getpeername(), ' is throwing errors, turning it off and shutting down process'
+		inputs.remove(s)
+		if s in outputs:
+			outputs.remove(s)
+		s.close()
+		killProcess = True
+
+	#reset all of our variables -- later this will include the ratio-consensus variables
+	#code block checks to see if k needs to be incremented
+	if allConnected:
+		if readyToAdvance:
+			k += 1
+			readyToAdvance = False
+			for key,sock in neighborSock.items():
+				outputs.append(sock)
+
+	#End processes check
+	if killProcess:
+		for s in inputs:
 			inputs.remove(s)
 			if s in outputs:
 				outputs.remove(s)
 			s.close()
-			killProcess = True
-	
-		#reset all of our variables -- later this will include the ratio-consensus variables
-		#code block checks to see if k needs to be incremented
-		if allConnected:
-			if readyToAdvance:
-				k += 1
-				readyToAdvance = False
-				for key,sock in neighborSock.items():
-					outputs.append(sock)
-
-		#End processes check
-		if killProcess:
-			for s in inputs:
-				inputs.remove(s)
-				if s in outputs:
-					outputs.remove(s)
-				s.close()
-			recvsocket.close()
-			break
-			
-	print 'Ending t = ', t , ' with k = ', k
-	print 'Start time = ', startTime-start, 'seconds from start of outer loop'
-	print 'EndTime = ', endTime - start, ' seconds'
-	print 'time elapsed = ',  endTime - startTime, ' seconds'
-	t += 1
+		recvsocket.close()
+		break
+		
+	if inI:
+		print 'Ending t = ', t , ' with k = ', k
+		print 'Start time = ', startTime-start, 'seconds from start of outer loop'
+		print 'EndTime = ', endTime - start, ' seconds'
+		print 'time elapsed = ',  endTime - startTime, ' seconds'
+		t += 1
 
 #output final time stamps (Debugging)
 print 'k for this machine ', THIS_IP, ': ', k
