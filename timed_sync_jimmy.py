@@ -48,7 +48,7 @@ pidb = {'R1': "169.254.86.232",
 		}
 
 #port to listen to when connecting to remote IPs
-PORT = 20000 
+PORT = 30000
 THIS_IP = get_ip_address('eth0')
 #maximum iteration
 kmax = 10000
@@ -138,25 +138,34 @@ killProcess = False
 #-1 = Stop
 # 0 = Start
 # 1 = Reset
+print "====================================Assigning current signal============================="
 current_signal = -1
 
-startTime = 0
-endTime = 0
+startTime = time.time()
+endTime = time.time()
 
 not_all_disconnected = True
 
 #our i/o while loop 
 while not_all_disconnected:
-
-	if inI and all_have_connected and t != tmax:
+	if inI and allConnected and t != tmax:
 		current_signal = 0
 		endTime = time.time()
 		if (endTime - startTime) >= 1:
+			print "+++++++++++++INCREMENTING T @ " + str(endTime-startTime)
 			t+=1
 			startTime = time.time()
-			current_signal = 1
-	
+			if t > 0:
+				current_signal = 1
+		
+	if t == tmax:
+		if allConnected:
+			for key,sock in neighborSock.items():
+				if sock not in outputs:
+					outputs.append(sock)
+
 	if current_signal == 1:
+		print "=================RESET========================="
 		if allConnected:
 			for key,sock in neighborSock.items():
 				if sock not in outputs:
@@ -165,12 +174,6 @@ while not_all_disconnected:
 			timeStamps[key] = -1
 		current_signal = 0
 		k = 1
-	
-	if t == tmax:
-		if allConnected:
-			for key,sock in neighborSock.items():
-				if sock not in outputs:
-					outputs.append(sock)
 
 
 	readable, writable, exceptional = select.select(inputs, outputs, inputs)			#see which sockets are ready to be writting, read from and which are throwing exceptions
@@ -194,18 +197,24 @@ while not_all_disconnected:
 				split_data = data.split(':')
 				#also split by '/' separator in future
 				print 'received ', data, 'from ', s.getpeername()
-				other_t = int(split_data[0])
-				other_k = int(split_data[1])
-				other_signal = int(split_data[2])
+				other_t = int(split_data[len(split_data) - 3])
+				other_k = int(split_data[len(split_data)-2])
+				other_signal = int(split_data[len(split_data)-1])
 
 				try: 
 					ip_address = s.getpeername()[0]
-					#Update T
+					#Update T for non-timers
 					if not inI and (other_t > t):
 						t = other_t
+						next_t = True
 						#Change current signal to reset only if we received a signal from t+1 that we are starting a new second
-						if other_signal == 1:
+						if other_signal == 1 and t > 0:
 							current_signal = 1
+						else:
+							current_signal = other_signal
+						for key in timeStamps.keys():
+							timeStamps[key] = -1
+						k = 1
 					#Update K
 					if other_k > timeStamps[ip_address] and t == other_t:
 						print 'timestamp for ', s.getpeername(), 'being updated to ', other_k
@@ -242,7 +251,7 @@ while not_all_disconnected:
 	for s in writable:
 		if t == tmax:
 			disconnectNeighbors[s.getpeername()[0]] = True
-		send_msg = str(t) + ":" + str(k) + ":" + str(current_signal)
+		send_msg = ":" + str(t) + ":" + str(k) + ":" + str(current_signal)
 		print 'Sending ', send_msg, ' to ', s.getpeername()
 		s.send(send_msg)
 		outputs.remove(s)
@@ -268,6 +277,10 @@ while not_all_disconnected:
 			readyToAdvance = False
 			for key,sock in neighborSock.items():
 				outputs.append(sock)
+		if next_t:
+			for key,sock in neighborSock.items():
+				outputs.append(sock)
+			next_t = False
 
 	#End processes check
 	if killProcess:
@@ -278,17 +291,13 @@ while not_all_disconnected:
 			s.close()
 		recvsocket.close()
 		break
-		
-	if inI:
-		print 'Ending t = ', t , ' with k = ', k
-		print 'Start time = ', startTime-start, 'seconds from start of outer loop'
-		print 'EndTime = ', endTime - start, ' seconds'
-		print 'time elapsed = ',  endTime - startTime, ' seconds'
-		t += 1
 
 #output final time stamps (Debugging)
+print "=====================END OF PROGRAM OUTPUT====================="
+print 't for this machine ', THIS_IP, ': ', t
 print 'k for this machine ', THIS_IP, ': ', k
-print len(timeStamps)
+print 'current signal for this machine', THIS_IP, ': ', current_signal
+print "Printing timestamps below of length: " + str(len(timeStamps))
 for key, value in timeStamps.items():
 	print key, ': ', value
 
