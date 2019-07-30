@@ -59,7 +59,11 @@ neighborSock = {}
 readyNeighbor = {}
 #timestamps for each neighbor
 timeStamps = {}
-#Sent Disconnection link for all neighbors
+#neighbors ip:value
+neighborValues = {}
+
+bufferValue = 0
+
 disconnectNeighbors = {}
 
 #use this socket to receive the incoming connections
@@ -92,7 +96,9 @@ info = f.readline()
 info = info.split()
 if int(info[2]) != 0:
 	inI = True
+y = float(info[4])
 print 'inI = ', inI
+
 #TODO: in Ratio Consensus, in the case of multiple DERs in I, there needs to be a method of deciding which DER will be the timer
 
 #We start by seeking out neighbors. some fail to accept connections, we wait for them to come online
@@ -127,7 +133,7 @@ start = time.time()
 
 #booleans and counters
 t = 0					#counter for the time intervals
-tmax = 10				#the number of intervals
+tmax = 20				#the number of intervals
 next_t = False			#Buffer to send the canceling t signal to the next machines required for both timer and regular nodes
 k = 1
 readyToAdvance = False
@@ -146,6 +152,9 @@ endTime = time.time()
 
 not_all_disconnected = True
 
+#Output file for writing
+output_file = open('output_file.txt', 'w+')
+
 #our i/o while loop 
 while not_all_disconnected:
 	if inI and allConnected and t != tmax:
@@ -155,8 +164,10 @@ while not_all_disconnected:
 			print "+++++++++++++INCREMENTING T @ " + str(endTime-startTime)
 			t+=1
 			startTime = time.time()
+			y = float(info[4]) + float(t)
 			if t > 0:
 				current_signal = 1
+		output_file.write("Iteration " + str(t) + ": " + str(y) + "\n")
 		
 	if t == tmax:
 		if allConnected:
@@ -197,16 +208,21 @@ while not_all_disconnected:
 				split_data = data.split(':')
 				#also split by '/' separator in future
 				print 'received ', data, 'from ', s.getpeername()
-				other_t = int(split_data[len(split_data) - 3])
-				other_k = int(split_data[len(split_data)-2])
-				other_signal = int(split_data[len(split_data)-1])
-
+				nth_index_values = split_data[3::4]
+				other_t = int(split_data[len(split_data) - 4])
+				other_k = int(split_data[len(split_data)-3])
+				other_signal = int(split_data[len(split_data)-2])
+				other_int_value = float(split_data[len(split_data)-1])
 				try: 
 					ip_address = s.getpeername()[0]
+
 					#Update T for non-timers
 					if not inI and (other_t > t):
 						t = other_t
 						next_t = True
+						output_file.write("Iteration " + str(t) + ": ")
+						output_file.write(str(y))
+						output_file.write("\n")
 						#Change current signal to reset only if we received a signal from t+1 that we are starting a new second
 						if other_signal == 1 and t > 0:
 							current_signal = 1
@@ -215,10 +231,12 @@ while not_all_disconnected:
 						for key in timeStamps.keys():
 							timeStamps[key] = -1
 						k = 1
+						y = float(info[4]) + float(t)
 					#Update K
 					if other_k > timeStamps[ip_address] and t == other_t:
 						print 'timestamp for ', s.getpeername(), 'being updated to ', other_k
 						timeStamps[ip_address] = other_k
+						neighborValues[ip_address] = other_int_value
 						if other_k > k + 1:
 							print "Out of sync at k = ", k, ", read ", other_k , "from ", s.getpeername()
 							killProcess = True
@@ -242,6 +260,10 @@ while not_all_disconnected:
 			syncCounter += 1
 	if syncCounter == len(neighborSock):
 		readyToAdvance = True
+		for ip, value in neighborValues.items():
+			y += value
+		numberNeighbors = len(neighborSock)
+		y = y/(numberNeighbors + 1)
 	elif syncCounter > len(neighborSock):
 		print 'ERROR: syncCount greater than number of neighbors.'
 		print 'syncCount = ', syncCount
@@ -251,7 +273,7 @@ while not_all_disconnected:
 	for s in writable:
 		if t == tmax:
 			disconnectNeighbors[s.getpeername()[0]] = True
-		send_msg = ":" + str(t) + ":" + str(k) + ":" + str(current_signal)
+		send_msg = ":" + str(t) + ":" + str(k) + ":" + str(current_signal) + ":" + str(y)
 		print 'Sending ', send_msg, ' to ', s.getpeername()
 		s.send(send_msg)
 		outputs.remove(s)
@@ -300,7 +322,7 @@ print 'current signal for this machine', THIS_IP, ': ', current_signal
 print "Printing timestamps below of length: " + str(len(timeStamps))
 for key, value in timeStamps.items():
 	print key, ': ', value
-
+output_file.close()
 """
 end = time.time()
 print 'Total time taken=', end - start, ' seconds.'
