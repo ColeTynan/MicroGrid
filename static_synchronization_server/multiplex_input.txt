@@ -1,0 +1,4 @@
+this_ip_address
+gmin gmax initialization_set_bool initialization_set_cardinality this_y_val
+neighbor_1
+neighbor_2

@@ -2,5 +2,5 @@
     "python.linting.pylintEnabled": true,
     "python.linting.pylamaEnabled": false,
     "python.linting.enabled": true,
-    "python.pythonPath": "C:\\Python27\\python.exe"
+    "python.pythonPath": "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\Python37_64\\python.exe"
 }
