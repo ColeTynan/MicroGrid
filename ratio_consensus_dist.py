@@ -1,17 +1,18 @@
-#Timed Sync: Handles synchronization between a variable network of RPis. Takes an input file as a commmand line param, which houses the Labels (e.g. R1\n R2) of the neighbors
+#timed sync: handles synchronization between a variable network of rpis. takes an input file as a commmand line param, which houses the labels (e.g. r1\n r2) of the neighbors
 #neighbors of the machine by passing an input file containing all the neighbors via the command line.
-#TODO: add reading of an input file (the Pr data file), change decision of master node to generalize code more
-#TODO: strenuously test the static version of this, compare to the single machine implementation
-#TODO: Think of edge cases (e.g. different graph structures, varying input values, etc.) and test these as well
-#NOTE: We need DATA for the presentation and the research paper, so make sure to record tests when we have a working version to go off of
+#todo: add reading of an input file (the pr data file), change decision of master node to generalize code more
+#todo: strenuously test the static version of this, compare to the single machine implementation
+#todo: think of edge cases (e.g. different graph structures, varying input values, etc.) and test these as well
+#note: we need data for the presentation and the research paper, so make sure to record tests when we have a working version to go off of
 
 import select
 import socket
 import sys
-import Queue
+import queue
 import time
 import fcntl
 import struct
+import csv
 
 #class to house information about the neighbors of the PI
 class Neighbor:
@@ -71,12 +72,12 @@ def all_have_connected(dict):
 		
 #code for getting this pi's ip-address( retrieved from 'https://stackoverflow.com/questions/24196932/how-can-i-get-the-ip-address-of-eth0-in-python')
 def get_ip_address(ifname):
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    return socket.inet_ntoa(fcntl.ioctl(
-        s.fileno(),
-        0x8915,  # SIOCGIFADDR
-        struct.pack('256s', ifname[:15])
-    )[20:24])
+		s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+		return socket.inet_ntoa(fcntl.ioctl(
+				s.fileno(),
+				0x8915,  # SIOCGIFADDR
+				struct.pack('256s', ifname[:15])
+		)[20:24])
 #def get_ip_address
 
 
@@ -87,8 +88,12 @@ def get_ip_address(ifname):
 pidb = {'R1': "169.254.86.232",
 				'R2': "169.254.142.58",
 				'R3': "169.254.180.72",
-				'R4': "169.254.160.208"
-			 }
+				'R4': "169.254.160.208",
+				'R5': "169.254.121.217",
+				'R6': "169.254.17.57",
+				'R7': "169.254.249.0",
+				'R8': "169.254.128.136"
+		 }
 
 #port to listen to when connecting to remote IPs
 PORT = 20000 
