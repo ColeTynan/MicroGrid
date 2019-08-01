@@ -1,5 +1,9 @@
 #Timed Sync: Handles synchronization between a variable network of RPis. Takes an input file as a commmand line param, which houses the Labels (e.g. R1\n R2) of the neighbors
 #neighbors of the machine by passing an input file containing all the neighbors via the command line.
+#TODO: add reading of an input file (the Pr data file), change decision of master node to generalize code more
+#TODO: strenuously test the static version of this, compare to the single machine implementation
+#TODO: Think of edge cases (e.g. different graph structures, varying input values, etc.) and test these as well
+#NOTE: We need DATA for the presentation and the research paper, so make sure to record tests when we have a working version to go off of
 
 import select
 import socket
@@ -15,6 +19,8 @@ class Neighbor:
 		self.k = -1
 		self.y = list()
 		self.z = list()
+		self.y = [0.0]*10000
+		self.z = [0.0]*10000
 		self.sock = theSocket
 		self.ready = False
 		self.isOpen = True
@@ -89,7 +95,7 @@ PORT = 20000
 THIS_IP = get_ip_address('eth0')
 
 #loop variables and messages
-tmax = 10								#Maximum number of time intervals (outer loop)
+tmax = 2								#Maximum number of time intervals (outer loop)
 t = 0										#iterator for outer loop TODO: have this be a parameter read from a file
 goMessage = "GO"				#message that is received and sent, indicating that sending and receving of data should begin
 noGoMessage = "NO_GO"		#message that is sent by a Pi that is not yet fully connected, indicating a shutdown of the system of Pis should begin
@@ -118,26 +124,27 @@ recvsocket.listen(3)
 
 inputFile = sys.argv[1] 
 f = open(inputFile)
+outFile = open("output.txt", "w+")
 
 #TODO: set up parsing for information in data file about the DER (if its in I, gmin, gmax, etc) for simplified, just if its the "timer" or not
 
 #Read the info for this specific DER
 #specifies gmin, gmax, if the DER is in I, etc. 
-#FORMAT: gmin gmax In_I_bool(0 or 1) |I| 
-inI = False
+#FORMAT: g_min g_max In_I_bool(0 or 1) |I| 
 try:
 	info = f.readline()
 	info = info.split()
-	gmin = int(info[0])
-	gmax = int(info[1])
+	g_min = float(info[0])
+	g_max = float(info[1])
+	inI = False
 	if int(info[2]) != 0:
 		inI = True
 	sizeOfI = int(info[3])
-	tempY = info[4]
+	tempPr = float(info[4])
 except Exception as e:
  print e
  print "Check input file is correct"
-print 'inI = ', inI
+#print 'inI = ', inI
 #TODO: in Ratio Consensus, in the case of multiple DERs in I, there needs to be a method of deciding which DER will be the timer
 #Probably would be best to just decide in the input file instead of implementing a convoluted method of deciding which will take the lead
 #TODO: Actually implement ratio consensus
@@ -159,7 +166,7 @@ numNeighbors = len(neighbors) + 1
 allConnected = all_have_connected(neighbors)
 thisY = list()
 thisZ = list()
-thisY.append(float(info[4]))									#Init the Y-array
+thisY.append(tempPr)									#Init the Y-array
 #TODO: Create and init the Z array, add code to loop to calculate.
 
 inputs = [ recvsocket ]
@@ -172,12 +179,21 @@ for k, v in neighbors.items():
 		inputs.append(v.sock)
 		outputs.append(v.sock)
 
+#initialize y and z values
+initZ = g_max - g_min
+initY = 0.0
+if inI:
+	initY = (tempPr/float(sizeOfI)) - g_min
+else: 
+	initY = - g_min
+
 #print 'Starting timer...'
 start = time.time()
 
 #booleans and counters
 #our i/o while loop 
 while t <= tmax:
+
 	k = 0
 	RESET = True
 	startTime = time.time()
@@ -200,9 +216,12 @@ while t <= tmax:
 			GO = False
 			killProcess = False
 			del thisY[:]
-			thisY.append(int(info[4]) + t)
-			RESET = False
+			thisY = [0.0]*10000
+			thisZ = [0.0]*10000
+			thisY[0] = initY
+			thisZ[0] = initZ
 			readyToAdvance = False
+			RESET = False
 		#END Reset
 		
 		readable, writable, exceptional = select.select(inputs, outputs, inputs, 0)			#see which sockets are ready to be writting, read from and which are throwing exceptions
@@ -213,10 +232,9 @@ while t <= tmax:
 				#print 'Timer is sending GO signal'
 				time.sleep(1)
 				SEND_GO = True
-				GO = True
-				
+				GO = True	
 		for s in readable:
-			if s is recvsocket:
+			if s is recvsocket:						#if we have a new connection, then accept it and add it to database of connected neighbors and check if all have connected
 				conn, client_address = s.accept()
 				print >>sys.stderr, 'new connection with ', client_address, ' established'
 				conn.setblocking(0)
@@ -226,87 +244,105 @@ while t <= tmax:
 				allConnected = all_have_connected(neighbors)
 			else:
 				data = s.recv(1024)
+				neighbor_ip = s.getpeername()
 				if data:	
 					#if the timestamp for this is not a duplicate, save it
-					#print 'received ', data, ' from ', s.getpeername()
+					#print 'received ', data, ' from ', neighbor_ip
 					#Split input up by message separator. 
 					data = data.split(':')
 					for message in data:
 						#Format of message after split: t_value[0] k_value[1] y_value[2] z_value[3] 
-						message = message.split('/')
-						t_value = message[0]
-						k_value = message[1]
-						y_value = message[2]
-						z_value = message[3]
-						#TODO: add calculations and code for z_values
-						print 'received ', message, 'from ', s.getpeername()
-						if message[0] == noGoMessage:
-							neighbors[s.getpeername()[0]].setReady(False)
-							if GO:
-								GO = False
-								RESET = True
-								SEND_NO_GO = True
-						elif message[0] == goMessage:							#GO flag received, now we can immediately begin performing ratio consensus
-							neighbors[s.getpeername()[0]].setReady(True) 
-							if not GO:
-								if allConnected:
-									GO = True
-									SEND_GO = True
-								else:
+						#try: 
+							message = message.split('/')
+														#TODO: add calculations and code for z_values
+							print 'received ', message, 'from ', neighbor_ip
+							if message[0] == noGoMessage:
+								neighbors[neighbor_ip[0]].setReady(False)
+								if GO:
+									GO = False
+									RESET = True
 									SEND_NO_GO = True
-						elif message[0] == endMessage:				#NOTE: Probably don't need this.
-							neighbors[s.getpeername()[0]].setReady(False)
-							#TODO: figure out a way to handle neighbors getting ahead or behind with the iteration
-
-						elif neighbors[s.getpeername()[0]].isReady():									#if this neighbor has sent the GO flag, we will start reading its input
-							try: 
-								if (int(message[0]) == t):
-									if (int(message[1]) > neighbors[s.getpeername()[0]].k) and (int(message[1]) <= k + 1 ):
-										print 'timestamp for ', s.getpeername(), 'being updated to ', int(message[1])
-										neighbors[s.getpeername()[0]].k = int(message[1])
-										thisY[int(message[1]) + 1] += message[2] 
+							elif message[0] == goMessage:							#GO flag received, now we can immediately begin performing ratio consensus
+								neighbors[neighbor_ip[0]].reset()
+								neighbors[neighbor_ip[0]].setReady(True) 
+								
+								if not GO:
+									if allConnected:
+										GO = True
+										SEND_GO = True
 									else:
-										print "Out of sync at k = ", k, ", read ", int(message[1]), "from ", s.getpeername()
-										killProcess = True
-								else:
-									print 'We have a neighbor on a different t: ', s.getpeername(), ' with neighbor t = ', message[0], ' and our t: ', t
-									killProcess = True
-							except IndexError:
-								for i in range(0, int(message[1] #NOTE: FINISH THIS, figure out a way to have the list accommodate the number of indices required to calculate y[k+1]
-							except Exception as e:
-								print "Caught exception in parsing messages: ", e
+										SEND_NO_GO = True
+							elif message[0] == endMessage:				#NOTE: Probably don't need this.
+								neighbors[neighbor_ip[0]].setReady(False)
+								#TODO: figure out a way to handle neighbors getting ahead or behind with the iteration
+							elif message[0] == '':
 								pass
 
+							elif neighbors[neighbor_ip[0]].isReady():									#if this neighbor has sent the GO flag, we will start reading its input
+								print 'went into the calculating step'
+								t_value = int(message[0])
+								k_value = int(message[1])
+								y_value = float(message[2])
+								z_value = float(message[3])
+
+								if True:
+
+								#try:
+
+									if (t_value == t):
+										if (k_value > neighbors[neighbor_ip[0]].k) and (k_value <= k + 1 ):
+											print 'timestamp for ', neighbor_ip, 'being updated from ', neighbors[neighbor_ip[0]].k ,'to ', k_value
+											neighbors[neighbor_ip[0]].k = k_value
+											print 'len(thisY) : ', len(thisY), ' and k_value is ', k_value
+											if len(thisY) <= (k_value + 1):
+												thisY.append(y_value)				#NOTE: optimize later?
+											else:	
+												if not SEND_NO_GO and allConnected:
+													thisY[k_value + 1] += y_value 
+											if len(thisZ) <= (k_value + 1):
+												thisZ.append(z_value)				#NOTE: optimize later?
+											else:	
+												if not SEND_NO_GO and allConnected:
+													thisZ[k_value + 1] += z_value 
+
+										else:
+											print "Out of sync at k = ", k, ", read ", k_value, "from ", neighbor_ip
+											killProcess = True
+											print 'The neighbors current value of k:', neighbors[neighbor_ip[0]].k
+											print 'k_value > neighbors[neighbor_ip[0]].k): ', (k_value > neighbors[neighbor_ip[0]].k) 
+											print '(k_value <= k + 1 ):', (k_value <= k + 1 )
+									else:
+										print 'We have a neighbor on a different t: ', neighbor_ip, ' with neighbor t = ', t_value, ' and our t: ', t
+										print 'The neighbors current value of k:', neighbors[neighbor_ip[0]].k
+										print 'k_value > neighbors[neighbor_ip[0]].k): ', (k_value > neighbors[neighbor_ip[0]].k) 
+										print '(k_value <= k + 1 ):', (k_value <= k + 1 )
+										killProcess = True
+										"""
+								#except IndexError:
+									print 'Tried to access a nonextistent index'
+									print 'len(thisY) = ', len(thisY), 'and tried to access k = ', k_value, 'whle this ders k =', k
+									
+									
+						#except Exception as e:
+							print "Caught exception in parsing messages: ", e
+							pass
+							"""
+
 					#data = int(splitData[len(splitData) - 1])					#in case multiple values were concatenated in the input buffer, split it up and use the most recently sent value
-				else:
+				#if data END
+				else:  #if no data is received, end the connection and close the process
 					#no data
-					print 'Socket ', s.getpeername(), 'is unresponsive, closing connection and shutting down.' 
+					print 'Socket ', neighbor_ip, 'is unresponsive, closing connection and shutting down.' 
 					killProcess = True
 		#END receiving block
 
-		if GO and SEND_GO:
-			startTime = time.time()
-
-		syncCounter = 0
-		#check if we have updated timestamps from every neighbor
-		for key, neigh in neighbors.items():
-			if neigh:
-				if (neigh.k >= k):
-					syncCounter += 1
-					#print "sync count incremented to ", syncCounter, ". K will increment when it is ", len(neighbor)
-		if syncCounter == len(neighbors):
-			readyToAdvance = True
-		elif syncCounter > len(neighbors):
-			print 'ERROR: syncCount greater than number of neighbors.'
-			print 'syncCount = ', syncCounter
-			print 'num of neighbors = ', len(neighbors)
-			killProcess = True 
-
-		if GO:
+		#timer checks
+		if GO: 
+			if SEND_GO:
+				startTime = time.time()
 			endTime = time.time()
 			if endTime- startTime >= time_limit:
 				END_INNER = True
-
 
 		#message sending
 		for s in writable:
@@ -318,36 +354,52 @@ while t <= tmax:
 					print 'Sending END_INNER signal to ', s.getpeername()
 					s.send(":" + endMessage)
 					continue
-				send_mssg = str(t) + "/" + str(k) + "/" + str(thisY[k])
+				send_mssg = str(t) + "/" + str(k) + "/" + str(thisY[k]) + "/"  + str(thisZ[k])
 				send_mssg = ":" + send_mssg	
 				print 'Sending ', send_mssg, ' to ', s.getpeername()
 				s.send(send_mssg)
 				outputs.remove(s)
 			elif SEND_NO_GO:
-				print 'Sending NOGO'
+				print 'Sending NO_GO'
 				s.send(":" + noGoMessage)
 		#End sending loop
 		SEND_NO_GO = False
 		SEND_GO = False
 
+
+		syncCounter = 0
+		#check if we have updated timestamps from every neighbor
+		for key, neigh in neighbors.items():
+			if neigh:
+				if (neigh.k >= k):
+					syncCounter += 1
+					#print "sync count incremented to ", syncCounter, ". K will increment when it is ", len(neighbor)
+
+		if syncCounter == len(neighbors):
+			thisY[k + 1] = thisY[k + 1]/float(len(neighbors) + 1)				#perform the rc calculations
+			thisZ[k + 1] = thisZ[k + 1]/float(len(neighbors) + 1)				#perform the rc calculations
+			k += 1
+			thisY[k + 1] += (thisY[k]) 																	#add the next value
+			thisZ[k + 1] += (thisZ[k]) 																	#add the next value
+
+			for key,neigh in neighbors.items():
+				outputs.append(neigh.sock)
+		elif syncCounter > len(neighbors):
+			print 'ERROR: syncCount greater than number of neighbors.'
+			print 'syncCount = ', syncCounter
+			print 'num of neighbors = ', len(neighbors)
+			killProcess = True 
+
+
 		#Error catching code block
 		for s in exceptional:
 			print 'Socket', s.getpeername(), ' is throwing errors, turning it off and shutting down process'
 			killProcess = True
-	
+
 		#reset all of our variables -- later this will include the ratio-consensus variables
 		#code block checks to see if k needs to be incremented
-		if allConnected:
-			if readyToAdvance:
-				#thisY[k + 1] should now have the summation of all neighbors y[k] values, time to divide by the number of neighbors + 1
-				thisY[k + 1] = thisY[k + 1]/float(len(neighbors) + 1)
-				k += 1
-				thisY.append(thisY[k])
-				#NOTE for me: add sending the thisY values to neighbors, and make sure thisY is init correctly
-				readyToAdvance = False
-				for key,neigh in neighbors.items():
-					outputs.append(neigh.sock)
-		#allconnected check
+			#thisY[k + 1] should now have the summation of all neighbors y[k] values, time to divide by the number of neighbors + 1
+						#allconnected check
 
 		#End processes check
 		if killProcess:		
@@ -356,10 +408,13 @@ while t <= tmax:
 				if s in outputs:
 					outputs.remove(s)
 				neighbors[s.getpeername()[0]].close()
+				#NOTE: does s still exist? Is it a copy of the socket stored in the data structure? Test this or look it up
 			recvsocket.close()
 			break
 		#killprocess
 
+	g_star = g_min + (thisY[k]/thisZ[k])*(g_max - g_min)
+	outFile.write("t = " + str(t) + "; k = " + str(k) + "; y[k] = " + str(thisY[k]) + "; z[k] = " + str(thisZ[k]) + "; g_star = " + str(g_star) + "\n")
 	print 'Ending t = ', t , ' with k = ', k
 	print 'We have averaged the values to be ', thisY[k - 1]
 	print 'Start time = ', startTime-start, 'seconds from start of outer loop'
@@ -369,7 +424,6 @@ while t <= tmax:
 	if killProcess:
 		break
 	#Outer loop
-
 
 #output final time stamps (Debugging)
 print 'k for this machine ', THIS_IP, ': ', k
