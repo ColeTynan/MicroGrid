@@ -129,7 +129,6 @@ recvsocket.listen(3)
 
 inputFile = sys.argv[1] 
 f = open(inputFile)
-outFile = open("output.txt", "w+")
 
 #TODO: set up parsing for information in data file about the DER (if its in I, gmin, gmax, etc) for simplified, just if its the "timer" or not
 
@@ -153,7 +152,17 @@ except Exception as e:
 ##print 'inI = ', inI
 #TODO: in Ratio Consensus, in the case of multiple DERs in I, there needs to be a method of deciding which DER will be the timer
 #Probably would be best to just decide in the input file instead of implementing a convoluted method of deciding which will take the lead
-#TODO: Actually implement ratio consensus
+
+#if in I, read the input CSV file
+pr = list()
+with open('reg-d.csv') as pr_input_file:
+	csv_reader = csv.reader(pr_input_file, delimiter=',')
+	line_count = 0
+	for row in csv_reader:
+		pr.append(float(row[1]))
+
+
+
 
 #We start by seeking out neighbors. some fail to accept connections, we wait for them to come online
 for line in f:
@@ -173,7 +182,6 @@ allConnected = all_have_connected(neighbors)
 thisY = list()
 thisZ = list()
 thisY.append(tempPr)									#Init the Y-array
-#TODO: Create and init the Z array, add code to loop to calculate.
 
 inputs = [ recvsocket ]
 outputs = [ ]
@@ -186,26 +194,30 @@ for k, v in neighbors.items():
 		outputs.append(v.sock)
 
 #initialize y and z values
-initZ = g_max - g_min
-initY = 0.0
-if inI:
-	initY = (tempPr/float(sizeOfI)) - g_min
-else: 
-	initY = - g_min
-
+#open output file
+outFile = open("output.txt", "w+")
 ##print 'Starting timer...'
 start = time.time()
 
 #booleans and counters
 #our i/o while loop 
-while t <= tmax:
+while t <= tmax:	#NOTE: Have this determined by the input file? Either send tmax with GO flag if inI or have it be some hardcoded param for now
 
 	k = 0
 	RESET = True
 	startTime = time.time()
 	endTime = startTime
 	END_INNER = False
-	
+
+	#initialize our y and z values
+	initZ = g_max - g_min
+	initY = 0.0
+	if inI:
+		initY = (pr[t]/float(sizeOfI)) - g_min
+	else: 
+		initY = - g_min
+
+
 	#Timed loop
 	while not END_INNER:	
 		if RESET:
