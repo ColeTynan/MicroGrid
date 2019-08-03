@@ -5,13 +5,6 @@ import queue
 import time
 from neighbor_node import NeighborNode
 
-#======Start of Server Creation=====#
-# Create a TCP/IP socket
-server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-server.setblocking(0)
-
-# Bind the socket to the port
-
 # == Subroutine to get this device's IP address == #
 input_file = open("multiplex_input.txt", "r")
 full_ip_address = input_file.readline()
@@ -19,20 +12,26 @@ full_ip_address = full_ip_address.split(":")
 server_address = (full_ip_address[0], int(full_ip_address[1]))
 # == End of subroutine to get this device's IP address == #
 
-#print ('starting up on %s port %s' % server_address, file=sys.stderr)
+#======Start of Server Creation=====#
+# Create a TCP/IP socket
+server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+server.setblocking(0)
+
+# Bind the socket to the port
+print ('starting up on %s port %s' % server_address, file=sys.stderr)
 server.bind(server_address)
 
 #Listen for incoming connections
 server.listen(5)
-
 #=====End of Server Creation=====#
 
 #=====Start of Data Structure & Variable Initialization=====#
+
 # ===== Initialization of Constants ===== #
 #END (Upper level protocol to how to receive bytes bigger than initial set size)
 END = '\n'
 #SEP (Seperator between different pieces of information in the byte string that we send)
-SEP = ','
+SEP = ':'
 # ===== End of Initialization of Constants ===== #
 
 #Create own timestamp for this device
@@ -49,7 +48,7 @@ this_state_signal = 0
 
 #Variable used later to keep track of the total number of message received in an iteration
 #Number of message rece
-msg_received_count = 0
+#msg_received_count = 0
 
 #Map of IPs to NeighborNode objects
 neighbors = {}
@@ -92,7 +91,7 @@ this_y_val = int(characteristics[4])
 # === Subroutine to process list of neighbors and initialize neighbors === #
 for x in input_file:
     string_parse = x.split(":")
-    #print("Neighbor:", string_parse)
+    print("Neighbor:", string_parse)
     neighbor_ip_address = string_parse[0]
     neighbor_port = string_parse[1]
    
@@ -119,14 +118,15 @@ def verify_all_connections():
 for ip_address, neighbor_node in neighbors.items():
 
     ip_key = neighbor_node.ip_address
-    port_value = neighbor_node.port
+    port_value = int(neighbor_node.port)
 
-    #Create new socket for the correpsonding ip_key and port
+    #Create new socket for the corresponding ip_key and port
     server_address = (ip_key, port_value)
     new_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
     #====Try to connect to the neighboring node using the socket we created====#
     try:
+        print("Trying to connect to ", server_address)
         new_socket.connect(server_address)
     except:
         print ("Connection Failed, on %s port %s" % server_address)
@@ -140,8 +140,9 @@ for ip_address, neighbor_node in neighbors.items():
         #Add socket to neighbors
         neighbor_node.socket = new_socket
 
-        #Add to outputs list for select
+        #Add to inputs/outputs list for select
         outputs.append(new_socket)
+        inputs.append(new_socket)
 
 all_nodes_connected = verify_all_connections()
 
@@ -175,9 +176,14 @@ while not_disconnected:
                 neighbor_socket = neighbor_node.socket
                 if neighbor_socket not in outputs:
                     outputs.append(neighbor_socket)
-           
+    print("Inputs: ", inputs)
+    print("Outputs: ", outputs)
+    print("This Timestamp: ", this_timestamp)
+    print("Neighbors: =====")
+    for neighbor_node in neighbors.values():
+        print("Neighbor IP: ", str(neighbor_node.ip_address))
+        print("Neighbor Timestamp: ", str(neighbor_node.timestamp))
     readable, writable, exceptional = select.select(inputs, outputs, totalSockets)
-
     '''
     readable,writable,exceptional
         These are three lists -subsets of the contents of the lsits passed in
@@ -219,17 +225,16 @@ while not_disconnected:
             # Set non-blocking for select
             connection.setblocking(0)
 
-            # Add this connection to the list of inputs
+            # Add this connection to the list of inputs and outputs
             inputs.append(connection)
+            outputs.append(connection)
 
             #Get the IP address of this new connection
-            # And add it as a neighbor and fill it with -1 to represent initial connection
             other_ip_address = connection.getpeername()[0]
-            other_port_value = connection.getpeername()[1]
 
-            new_neighbor = NeighborNode(other_ip_address, other_port_value)
-
-            new_neighbor.socket = connection
+            neighbor_node = neighbors[other_ip_address]
+            neighbor_node.socket = connection
+            
             
         else:
 
@@ -238,12 +243,6 @@ while not_disconnected:
 
             if data:
                 data = data.decode()
-
-                # Loop to receive the complete message
-                while END not in data:
-                    receive = s.recv(256)
-                    receive = receive.decode()
-                    data += receive
 
                 data_strip_END = data.replace(END, "")
                 print ("Received ", data_strip_END, ' from ', s.getpeername())
@@ -280,12 +279,8 @@ while not_disconnected:
                         neighbor_node.updated_timestamp_bool = True
  
                         #Check if the new msg_received count is equal to the number of neighbors, if so move on to next iteration
-                        msg_received_count += 1
+                        #msg_received_count += 1
                         
-                        # Add to output channel for a response indicating we have processed timestamp signal
-                        if s not in outputs:
-                            outputs.append(s)
-
             else: # ===== WIP ===== #
 
                 # Interpret empty result as closed connection
@@ -301,36 +296,43 @@ while not_disconnected:
                 # del message_queues[s]
 
     ## ===== Process Start for next iteration subroutine ===== ##
-    if (msg_received_count == len(neighbors)):
+    #if (msg_received_count == len(neighbors)):
 
-        received_all_timestamps = True
-        all_neighbors_processed = True
+    received_all_timestamps = True
+    all_neighbors_processed = True
 
-        #===== Processing for next iteration =====#
-        for ip_address, neighbor_node in neighbors:
+    neighbors_one_higher = True
 
-            #Double check timestamps, if it is unequal, we skip the checks
-            if this_timestamp != neighbor_node.timestamp:
-                received_all_timestamps = False
+    #===== Processing for next iteration =====#
+    for neighbor_node in neighbors.values():
 
-            if not neighbor_node.processed_bool:
-                all_neighbors_processed = False
+        #Double check timestamps, if it is unequal, we skip the checks
+        if this_timestamp != neighbor_node.timestamp:
+            received_all_timestamps = False
 
-        if received_all_timestamps and all_neighbors_processed:
+        if this_timestamp+1 != neighbor_node.timestamp:
+            neighbors_one_higher = False
 
-            this_timestamp+=1
+        if not neighbor_node.processed_bool:
+            all_neighbors_processed = False
 
-            for neighbor_node in neighbors.values():
-                
-                #Reset variables
-                msg_received_count = 0
-                neighbor_node.processed_bool = False
-                neighbor_node.updated_timestamp_bool = False
+        
+    if (received_all_timestamps or neighbors_one_higher) and all_neighbors_processed:
 
-                # === Put this socket in outputs so that we can send out new timestamp === #
-                this_node_socket = neighbor_node.socket
-                if this_node_socket not in outputs:
-                    outputs.append(this_node_socket)
+        this_timestamp+=1
+        print("=================Proceeding to next timestamp=====================")
+        for neighbor_node in neighbors.values():
+            
+            #Reset variables
+            #msg_received_count = 0
+            neighbor_node.processed_bool = False
+            neighbor_node.updated_timestamp_bool = False
+            neighbor_node.processed_signal = 1
+
+            # === Put this socket in outputs so that we can send out new timestamp === #
+            neighbor_socket = neighbor_node.socket
+            if neighbor_socket not in outputs:
+                outputs.append(neighbor_socket)
 
     ## ===== Process End for next iteration subroutine ===== ##
 
@@ -347,9 +349,17 @@ while not_disconnected:
             other_ip_address = s.getpeername()[0]
             neighbor_node = neighbors[other_ip_address]
             neighbor_node.disconnected = True
-
-        send_msg = str(this_t) + ":" + str(this_timestamp) + ":" + str(this_state_signal) + ":" + str(this_y_val)
+        
+        other_ip_address = s.getpeername()[0]
+        neighbor_node = neighbors[other_ip_address]
+        
+        send_msg = str(this_t) + SEP + str(this_timestamp) + SEP + str(this_state_signal) + SEP + str(neighbor_node.processed_signal) + SEP + str(this_y_val)
         print ('Sending ', send_msg, ' to ', s.getpeername())
+
+        #Reset processed signal
+        neighbor_node.processed_signal = 0
+
+        send_msg = send_msg.encode('utf-8')
         s.send(send_msg)
         outputs.remove(s)
 
@@ -367,8 +377,8 @@ while not_disconnected:
         not_disconnected = False
 
     # === End of subroutine === #
-
     """
+    print(not_disconnected)
     ===Exceptional===
     1) Error with socket, close the socket
     """
