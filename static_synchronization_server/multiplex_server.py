@@ -42,7 +42,7 @@ this_timestamp = 0
 # ====== t_max and timer signals ===== #
 #Initialize the default outer loop val for this device (0 neutral)
 # 0 = Neutral (stay at current state), propogate neutral state
-# 1 = Switch to running state, propogate running signal
+# 1 = Reset Signal
 # -1 = Switch to stop state, propogate stop signal
 this_state_signal = 0
 
@@ -149,7 +149,12 @@ all_nodes_connected = verify_all_connections()
 #=====End of Connection Initialization with neighbors=====#
 
 not_disconnected = True
+
+
 start_time = time.time()
+#Bool to start the timer when the whole progrma starts
+start_time_bool = False
+
 end_time = time.time()
 
 this_t = 0
@@ -158,17 +163,38 @@ t_max = 10
 #===== Main Program ====#
 while not_disconnected:
     
+    print ("This Initialization Bool : ", str(this_initialization_node))
+    print ("All connected : ", str(all_nodes_connected))
+
+    if all_nodes_connected and not start_time_bool:
+        start_time = time.time()
+        start_time_bool = True
+
     # ==== Logic for the timer node and incrementing the timer node ==== #
     if this_initialization_node and all_nodes_connected and this_t != t_max:
-        current_signal = 0
+        this_state_signal = 0
         end_time = time.time()
         if (end_time - start_time) >= 1:
             print ("+++++++++++++++++++++++++INCREMENTING T @ " + str(end_time - start_time))
             this_t += 1
             start_time = time.time()
             this_y_val = float(characteristics[4]) + float(this_t)
-            if this_t > 0:
-                current_signal = 1
+
+            print ("====================RESET=========================")
+            if all_nodes_connected:
+                for neighbor_node in neighbors.values():
+                    #Put all sockets into outputs so we can update t
+                    neighbor_socket = neighbor_node.socket
+                    if neighbor_socket not in outputs:
+                        outputs.append(neighbor_socket)
+                    
+                    #Change all timestamps to -1 to prepare for next iteration of t
+                    neighbor_node.timestamp = -1
+                    neighbor_node.processed_bool = True
+                    neighbor_node.processed_signal = 1
+                    neighbor_node.updated_timestamp_bool = False
+
+            this_timestamp = 0
     
     if this_t == t_max:
         if all_nodes_connected:
@@ -235,7 +261,8 @@ while not_disconnected:
             neighbor_node = neighbors[other_ip_address]
             neighbor_node.socket = connection
             
-            
+            all_nodes_connected = verify_all_connections()
+
         else:
 
             # Try to receive initial data
@@ -252,28 +279,39 @@ while not_disconnected:
                 other_k = int(array_of_vals[1])
                 other_state_signal = int(array_of_vals[2])
                 other_processed_signal = int(array_of_vals[3])
-                other_int_value = int(array_of_vals[4])
+                other_int_value = float(array_of_vals[4])
                 other_ip_address = s.getpeername()[0]
                 neighbor_node = neighbors[other_ip_address]
 
+                # Update T for non-timers
                 if not this_initialization_node and other_t > this_t:
+                    #print("=============RESET===========", s)
+                    #Update timestamp and reset variables
+                    this_t = other_t
+                    this_timestamp = 0
+                    
+                    for neighbor_node in neighbors.values():
+                        neighbor_socket = neighbor_node.socket
+                        if neighbor_socket not in outputs:
+                            outputs.append(neighbor_socket)
+                        neighbor_node.timestamp = -1
+                        neighbor_node.processed_bool = True
+                        neighbor_node.signal = 1
+                        neighbor_node.updated_timestamp_bool = False
 
-                     #Update timestamp and reset variables
-                     this_t = other_t
-                     next_t = True
-                     this_timestamp = 1
-                     this_y_val = float(characteristics[4]) + float(this_t)
+                    this_y_val = float(characteristics[4]) + float(this_t)
 
                 #Check if the data we received corresponding to a returning 'processed' signal
-                elif other_t == this_t:
-                    
+                neighbor_node = neighbors[other_ip_address]
+                if other_t == this_t:
+                    #print("========Proceed=======", s)
                     if other_processed_signal:
 
                         #Get IP and indicate that this neighbor has been processed
                         neighbor_node.processed_bool = True
-                    
                     if neighbor_node.timestamp < other_k:
-
+                        
+                        #print("======Update=====", s)
                         # Update new integer timestamp
                         neighbor_node.timestamp = other_k
                         neighbor_node.updated_timestamp_bool = True
@@ -301,23 +339,18 @@ while not_disconnected:
     received_all_timestamps = True
     all_neighbors_processed = True
 
-    neighbors_one_higher = True
-
     #===== Processing for next iteration =====#
     for neighbor_node in neighbors.values():
 
         #Double check timestamps, if it is unequal, we skip the checks
-        if this_timestamp != neighbor_node.timestamp:
+        if this_timestamp != neighbor_node.timestamp and this_timestamp+1 != neighbor_node.timestamp:
             received_all_timestamps = False
-
-        if this_timestamp+1 != neighbor_node.timestamp:
-            neighbors_one_higher = False
 
         if not neighbor_node.processed_bool:
             all_neighbors_processed = False
 
         
-    if (received_all_timestamps or neighbors_one_higher) and all_neighbors_processed:
+    if received_all_timestamps and all_neighbors_processed:
 
         this_timestamp+=1
         print("=================Proceeding to next timestamp=====================")
