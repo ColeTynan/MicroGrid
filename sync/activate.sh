@@ -1,8 +1,21 @@
 #!/bin/bash
+#use this to run a program on each pi in the background
+#USAGE: ./path/activate script_to_run.sh IP_File.txt
 
-#USAGE: ./activate script_to_run 
+DEFAULT_SCRIPT='~/runratcon.sh'
+DEFAULT_IP='/mnt/c/Users/cole/Documents/Internship_Work/microgrid/sync/IP.txt'
 SCRIPT=$1
-IPs='/mnt/c/Users/cole/Documents/Internship_Work/microgrid/sync/IP.txt'
+IPs=$2
+if [[ -z "$IPs" ]]; then
+	IPs=$DEFAULT_IP
+	echo $IPs
+fi
+
+if [[ -z "$SCRIPT" ]]; then
+	SCRIPT=$DEFAULT_SCRIPT
+	echo $SCRIPT
+fi
+
 while read line; do
 	 `ssh -n -f pi@"$line" "sh -c 'nohup ~/"$SCRIPT" > /dev/null 2>&1 &'"`
 	 echo "Sent to $line"
