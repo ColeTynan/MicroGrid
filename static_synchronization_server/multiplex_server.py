@@ -4,6 +4,7 @@ import sys
 import queue
 import time
 from neighbor_node import NeighborNode
+import copy
 
 # == Subroutine to get this device's IP address == #
 input_file = open("multiplex_input.txt", "r")
@@ -46,10 +47,6 @@ this_timestamp = 0
 # -1 = Switch to stop state, propogate stop signal
 this_state_signal = 0
 
-#Variable used later to keep track of the total number of message received in an iteration
-#Number of message rece
-#msg_received_count = 0
-
 #Map of IPs to NeighborNode objects
 neighbors = {}
 
@@ -62,6 +59,10 @@ outputs = []
 inputs = [ server ]
 #Complete list of sockets to watch out for errors
 totalSockets = inputs + outputs
+
+
+#Output file for writing
+output_file = open('output_file.txt', 'w+')
 
 #=====End of Variable initialization=====#
 
@@ -85,7 +86,7 @@ this_gmin = int(characteristics[0])
 this_gmax = int(characteristics[1])
 this_initialization_node = int(characteristics[2])
 initialization_set_cardinality = int(characteristics[3])
-this_y_val = int(characteristics[4])
+this_y_val = float(characteristics[4])
 # === End of subroutine === #
 
 # === Subroutine to process list of neighbors and initialize neighbors === #
@@ -96,6 +97,7 @@ for x in input_file:
     neighbor_port = string_parse[1]
    
     new_neighbor = NeighborNode(neighbor_ip_address, neighbor_port)
+    new_neighbor.timestamp_vals = {}
     neighbors[neighbor_ip_address] = new_neighbor
 # === End of subroutine === #
 
@@ -202,13 +204,15 @@ while not_disconnected:
                 neighbor_socket = neighbor_node.socket
                 if neighbor_socket not in outputs:
                     outputs.append(neighbor_socket)
-    print("Inputs: ", inputs)
-    print("Outputs: ", outputs)
+
+    #print("Inputs: ", inputs)
+    #print("Outputs: ", outputs)
     print("This Timestamp: ", this_timestamp)
     print("Neighbors: =====")
     for neighbor_node in neighbors.values():
         print("Neighbor IP: ", str(neighbor_node.ip_address))
         print("Neighbor Timestamp: ", str(neighbor_node.timestamp))
+    print("This Y Val: ", this_y_val)
     readable, writable, exceptional = select.select(inputs, outputs, totalSockets)
     '''
     readable,writable,exceptional
@@ -274,51 +278,68 @@ while not_disconnected:
                 data_strip_END = data.replace(END, "")
                 print ("Received ", data_strip_END, ' from ', s.getpeername())
                 array_of_vals = data_strip_END.split(SEP)
+                
+                num_messages = int(len(array_of_vals)/5)
 
-                other_t = int(array_of_vals[0])
-                other_k = int(array_of_vals[1])
-                other_state_signal = int(array_of_vals[2])
-                other_processed_signal = int(array_of_vals[3])
-                other_int_value = float(array_of_vals[4])
-                other_ip_address = s.getpeername()[0]
-                neighbor_node = neighbors[other_ip_address]
+                for x in range(0, num_messages):
+                    other_t = copy.copy(int(array_of_vals[x*5]))
+                    other_k = copy.copy(int(array_of_vals[x*5 + 1]))
+                    other_state_signal = copy.copy(int(array_of_vals[x * 5 + 2]))
+                    other_processed_signal = copy.copy(int(array_of_vals[x * 5 + 3]))
+                    other_value = copy.copy(float(array_of_vals[x * 5 + 4]))
+                    other_ip_address = copy.copy(s.getpeername()[0])
+                    neighbor_node = neighbors[other_ip_address]
 
-                # Update T for non-timers
-                if not this_initialization_node and other_t > this_t:
-                    #print("=============RESET===========", s)
-                    #Update timestamp and reset variables
-                    this_t = other_t
-                    this_timestamp = 0
-                    
-                    for neighbor_node in neighbors.values():
-                        neighbor_socket = neighbor_node.socket
-                        if neighbor_socket not in outputs:
-                            outputs.append(neighbor_socket)
-                        neighbor_node.timestamp = -1
-                        neighbor_node.processed_bool = True
-                        neighbor_node.signal = 1
-                        neighbor_node.updated_timestamp_bool = False
-
-                    this_y_val = float(characteristics[4]) + float(this_t)
-
-                #Check if the data we received corresponding to a returning 'processed' signal
-                neighbor_node = neighbors[other_ip_address]
-                if other_t == this_t:
-                    #print("========Proceed=======", s)
-                    if other_processed_signal:
-
-                        #Get IP and indicate that this neighbor has been processed
-                        neighbor_node.processed_bool = True
-                    if neighbor_node.timestamp < other_k:
+                    # Update T for non-timers
+                    if not this_initialization_node and other_t > this_t:
+                        #print("=============RESET===========", s)
                         
-                        #print("======Update=====", s)
-                        # Update new integer timestamp
-                        neighbor_node.timestamp = other_k
-                        neighbor_node.updated_timestamp_bool = True
- 
-                        #Check if the new msg_received count is equal to the number of neighbors, if so move on to next iteration
-                        #msg_received_count += 1
+                        #Write to output file
+                        output_file.write("Iteration " + str(this_t) + SEP + str(this_y_val) + END)
                         
+                        #Update timestamp and reset variables
+                        this_t = other_t
+                        this_timestamp = 0
+                        this_y_val = float(characteristics[4]) + float(this_t)
+
+                        for neighbor_address in neighbors:
+                            neighbor_node = neighbors[neighbor_address]
+                            neighbor_socket = neighbor_node.socket
+                            if neighbor_socket not in outputs:
+                                outputs.append(neighbor_socket)
+                            neighbor_node.timestamp = -1
+                            neighbor_node.processed_bool = False
+                            neighbor_node.processed_signal = 1
+                            neighbor_node.updated_timestamp_bool = False
+                            neighbor_node.sent_data = False
+
+
+                    #Check if the data we received corresponding to a returning 'processed' signal
+                    print("other_ip_address :", other_ip_address)
+                    neighbor_node = neighbors[other_ip_address]
+                    if other_t == this_t:
+                        #print("========Proceed=======", s)
+                        if other_processed_signal:
+
+                            #Get IP and indicate that this neighbor has been processed
+                            neighbor_node.processed_bool = True
+
+                        if neighbor_node.timestamp < other_k:
+                            
+                            #print("======Update=====", s)
+                            # Update new integer timestamp
+                            neighbor_node.timestamp = copy.copy(other_k)
+                            neighbor_node.updated_timestamp_bool = True
+
+                            #Update Value
+                            print("======== Updating value =====")
+                            print("Updating value to : ", other_value)
+                            neighbors[other_ip_address].timestamp_vals[other_k % 3] = copy.deepcopy(other_value)
+                            print("On neighbor: ", neighbor_node.ip_address, neighbor_node.timestamp_vals)
+                            for neighbor_node in neighbors.values():
+                                print("After updating: ", neighbor_node.ip_address)
+                                print("Values are :", neighbor_node.timestamp_vals)
+    
             else: # ===== WIP ===== #
 
                 # Interpret empty result as closed connection
@@ -332,42 +353,6 @@ while not_disconnected:
 
                 #Remove message queue
                 # del message_queues[s]
-
-    ## ===== Process Start for next iteration subroutine ===== ##
-    #if (msg_received_count == len(neighbors)):
-
-    received_all_timestamps = True
-    all_neighbors_processed = True
-
-    #===== Processing for next iteration =====#
-    for neighbor_node in neighbors.values():
-
-        #Double check timestamps, if it is unequal, we skip the checks
-        if this_timestamp != neighbor_node.timestamp and this_timestamp+1 != neighbor_node.timestamp:
-            received_all_timestamps = False
-
-        if not neighbor_node.processed_bool:
-            all_neighbors_processed = False
-
-        
-    if received_all_timestamps and all_neighbors_processed:
-
-        this_timestamp+=1
-        print("=================Proceeding to next timestamp=====================")
-        for neighbor_node in neighbors.values():
-            
-            #Reset variables
-            #msg_received_count = 0
-            neighbor_node.processed_bool = False
-            neighbor_node.updated_timestamp_bool = False
-            neighbor_node.processed_signal = 1
-
-            # === Put this socket in outputs so that we can send out new timestamp === #
-            neighbor_socket = neighbor_node.socket
-            if neighbor_socket not in outputs:
-                outputs.append(neighbor_socket)
-
-    ## ===== Process End for next iteration subroutine ===== ##
 
     """
     ===Writeable===
@@ -386,16 +371,70 @@ while not_disconnected:
         other_ip_address = s.getpeername()[0]
         neighbor_node = neighbors[other_ip_address]
         
-        send_msg = str(this_t) + SEP + str(this_timestamp) + SEP + str(this_state_signal) + SEP + str(neighbor_node.processed_signal) + SEP + str(this_y_val)
+        send_msg = str(this_t) + SEP + str(this_timestamp) + SEP + str(this_state_signal) + SEP + str(neighbor_node.processed_signal) + SEP + str(this_y_val) + SEP
         print ('Sending ', send_msg, ' to ', s.getpeername())
 
         #Reset processed signal
         neighbor_node.processed_signal = 0
+        neighbor_node.sent_data = True
 
         send_msg = send_msg.encode('utf-8')
         s.send(send_msg)
         outputs.remove(s)
 
+    ## ===== Process Start for next iteration subroutine ===== ##
+
+    received_all_timestamps = True
+    all_neighbors_processed = True
+    all_sent_data = True
+
+    #===== Processing for next iteration =====#
+    for neighbor_node in neighbors.values():
+
+        #Double check timestamps, if it is unequal, we skip the checks
+        if this_timestamp != neighbor_node.timestamp and this_timestamp+1 != neighbor_node.timestamp:
+            received_all_timestamps = False
+
+        if not neighbor_node.processed_bool:
+            all_neighbors_processed = False
+
+        if not neighbor_node.sent_data:
+            all_sent_data = False
+
+    print("Received all timestamps = ", received_all_timestamps)
+    print("all_neighbors_processed = ", all_neighbors_processed)
+        
+    if received_all_timestamps and all_neighbors_processed and all_sent_data:
+
+        print("=================Proceeding to next timestamp=====================")
+        print("Neighbors : ", neighbors.values())
+        for neighbor_node in neighbors.values():
+            
+            print("Printing neighbor node name : ", neighbor_node.ip_address)
+            print("Timestamp values : ", neighbor_node.timestamp_vals)
+          
+            #Before proceeding, we update this y_val
+            this_y_val += neighbor_node.timestamp_vals[this_timestamp % 3]
+            
+            print("This timestamp: ", this_timestamp)
+            print("Adding : ", neighbor_node.timestamp_vals[this_timestamp % 3])
+            #Reset variables
+            neighbor_node.processed_bool = False
+            neighbor_node.updated_timestamp_bool = False
+            neighbor_node.sent_data = False
+            neighbor_node.processed_signal = 1
+
+            # === Put this socket in outputs so that we can send out new timestamp === #
+            neighbor_socket = neighbor_node.socket
+            if neighbor_socket not in outputs:
+                outputs.append(neighbor_socket)
+        
+        print("This Y Val before dividing: ", this_y_val)
+        number_neighbors = len(neighbors)
+        this_y_val = this_y_val / (number_neighbors + 1)
+        this_timestamp+=1
+
+    ## ===== Process End for next iteration subroutine ===== ##
 
     # === Subroutine for determining when to stop this loop === #
     # ==== Current determination created when we sent all t == t_max signals to all neighbors ==== #
@@ -436,3 +475,4 @@ for neighbor_node in neighbors.values():
     neighbor_timestamp = neighbor_node.timestamp
     neighbor_ip_address = neighbor_node.ip_address
     print ("Neighbor Node: " + str(neighbor_ip_address) + " - Timestamp : " + str(neighbor_timestamp))
+output_file.close()
