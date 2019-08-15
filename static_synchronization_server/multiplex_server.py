@@ -60,6 +60,8 @@ inputs = [ server ]
 #Complete list of sockets to watch out for errors
 totalSockets = inputs + outputs
 
+#Maximum number of neighbors
+max_neighbors = float(3)
 
 #Output file for writing
 output_file = open('output_file.txt', 'w+')
@@ -178,6 +180,10 @@ while not_disconnected:
         end_time = time.time()
         if (end_time - start_time) >= 1:
             print ("+++++++++++++++++++++++++INCREMENTING T @ " + str(end_time - start_time))
+
+            #Write to output file
+            output_file.write("Iteration " + str(this_t) + SEP + str(this_y_val) + END)
+            
             this_t += 1
             start_time = time.time()
             this_y_val = float(characteristics[4]) + float(this_t)
@@ -401,12 +407,12 @@ while not_disconnected:
         if not neighbor_node.sent_data:
             all_sent_data = False
 
-    print("Received all timestamps = ", received_all_timestamps)
-    print("all_neighbors_processed = ", all_neighbors_processed)
-        
     if received_all_timestamps and all_neighbors_processed and all_sent_data:
 
         print("=================Proceeding to next timestamp=====================")
+
+        #First update the y value
+        this_y_val = (this_y_val * (1 - (len(neighbors)/max_neighbors)))
         print("Neighbors : ", neighbors.values())
         for neighbor_node in neighbors.values():
             
@@ -414,10 +420,8 @@ while not_disconnected:
             print("Timestamp values : ", neighbor_node.timestamp_vals)
           
             #Before proceeding, we update this y_val
-            this_y_val += neighbor_node.timestamp_vals[this_timestamp % 3]
+            this_y_val += float(neighbor_node.timestamp_vals[this_timestamp % 3] * (1/max_neighbors))
             
-            print("This timestamp: ", this_timestamp)
-            print("Adding : ", neighbor_node.timestamp_vals[this_timestamp % 3])
             #Reset variables
             neighbor_node.processed_bool = False
             neighbor_node.updated_timestamp_bool = False
@@ -429,9 +433,6 @@ while not_disconnected:
             if neighbor_socket not in outputs:
                 outputs.append(neighbor_socket)
         
-        print("This Y Val before dividing: ", this_y_val)
-        number_neighbors = len(neighbors)
-        this_y_val = this_y_val / (number_neighbors + 1)
         this_timestamp+=1
 
     ## ===== Process End for next iteration subroutine ===== ##
