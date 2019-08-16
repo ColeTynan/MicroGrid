@@ -1,4 +1,4 @@
 this_ip_address
-gmin gmax initialization_set_bool initialization_set_cardinality this_y_val init_x init_z init_lambda
+gmin gmax initialization_set_bool initialization_set_cardinality init_x init_z init_lambda
 neighbor_1
 neighbor_2

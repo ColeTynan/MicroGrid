@@ -3,7 +3,7 @@ import socket
 import sys
 import queue
 import time
-from neighbor_node import NeighborNode
+from neighbor_node_saddle_point import NeighborNode
 import copy
 
 # == Subroutine to get this device's IP address == #
@@ -66,6 +66,9 @@ max_neighbors = float(3)
 #Output file for writing
 output_file = open('output_file.txt', 'w+')
 
+#Number of messages we're sending
+NUM_MESSAGES = 7
+
 #=====End of Variable initialization=====#
 
 # Debugs for output/input lists
@@ -88,10 +91,9 @@ this_gmin = int(characteristics[0])
 this_gmax = int(characteristics[1])
 this_initialization_node = int(characteristics[2])
 initialization_set_cardinality = int(characteristics[3])
-this_y_val = float(characteristics[4])
-this_x = characteristics[5]
-this_z = characteristics[6]
-this_lambda = characteristics[7]
+this_x = characteristics[4]
+this_z = characteristics[5]
+this_lambda = characteristics[6]
 # === End of subroutine === #
 
 # === Subroutine to process list of neighbors and initialize neighbors === #
@@ -185,7 +187,7 @@ while not_disconnected:
             print ("+++++++++++++++++++++++++INCREMENTING T @ " + str(end_time - start_time))
 
             #Write to output file
-            output_file.write("Iteration " + str(this_t) + SEP + str(this_y_val) + END)
+            output_file.write("Iteration " + str(this_t) + SEP + str(this_x) + END)
             
             this_t += 1
             start_time = time.time()
@@ -288,14 +290,16 @@ while not_disconnected:
                 print ("Received ", data_strip_END, ' from ', s.getpeername())
                 array_of_vals = data_strip_END.split(SEP)
                 
-                num_messages = int(len(array_of_vals)/5)
+                num_messages = len(array_of_vals)//NUM_MESSAGES
 
                 for x in range(0, num_messages):
-                    other_t = copy.copy(int(array_of_vals[x*5]))
-                    other_k = copy.copy(int(array_of_vals[x*5 + 1]))
-                    other_state_signal = copy.copy(int(array_of_vals[x * 5 + 2]))
-                    other_processed_signal = copy.copy(int(array_of_vals[x * 5 + 3]))
-                    other_value = copy.copy(float(array_of_vals[x * 5 + 4]))
+                    other_t = copy.copy(int(array_of_vals[x*NUM_MESSAGES]))
+                    other_k = copy.copy(int(array_of_vals[x*NUM_MESSAGES + 1]))
+                    other_state_signal = copy.copy(int(array_of_vals[x * NUM_MESSAGES + 2]))
+                    other_processed_signal = copy.copy(int(array_of_vals[x * NUM_MESSAGES + 3]))
+                    other_x = copy.copy(float(array_of_vals[x * NUM_MESSAGES + 4]))
+                    other_z = copy.copy(float(array_of_vals[x * NUM_MESSAGES + 5]))
+                    other_lambda = copy.copy(float(array_of_vals[x * NUM_MESSAGES + 6]))
                     other_ip_address = copy.copy(s.getpeername()[0])
                     neighbor_node = neighbors[other_ip_address]
 
@@ -304,12 +308,12 @@ while not_disconnected:
                         #print("=============RESET===========", s)
                         
                         #Write to output file
-                        output_file.write("Iteration " + str(this_t) + SEP + str(this_y_val) + END)
+                        output_file.write("Iteration " + str(this_t) + SEP + str(this_x) + END)
                         
                         #Update timestamp and reset variables
                         this_t = other_t
                         this_timestamp = 0
-                        this_y_val = float(characteristics[4]) + float(this_t)
+                        this_x = float(characteristics[4]) + float(this_t)
 
                         for neighbor_address in neighbors:
                             neighbor_node = neighbors[neighbor_address]
@@ -341,13 +345,8 @@ while not_disconnected:
                             neighbor_node.updated_timestamp_bool = True
 
                             #Update Value
-                            print("======== Updating value =====")
-                            print("Updating value to : ", other_value)
-                            neighbors[other_ip_address].timestamp_vals[other_k % 3] = copy.deepcopy(other_value)
-                            print("On neighbor: ", neighbor_node.ip_address, neighbor_node.timestamp_vals)
-                            for neighbor_node in neighbors.values():
-                                print("After updating: ", neighbor_node.ip_address)
-                                print("Values are :", neighbor_node.timestamp_vals)
+                            neighbors[other_ip_address].timestamp_z_vals[other_k % 3] = copy.deepcopy(other_z)
+                            neighbors[other_ip_address].timestamp_lambda_vals[other_k % 3] = copy.deepcopy(other_lambda)
     
             else: # ===== WIP ===== #
 
@@ -380,7 +379,21 @@ while not_disconnected:
         other_ip_address = s.getpeername()[0]
         neighbor_node = neighbors[other_ip_address]
         
-        send_msg = str(this_t) + SEP + str(this_timestamp) + SEP + str(this_state_signal) + SEP + str(neighbor_node.processed_signal) + SEP + str(this_y_val) + SEP
+        send_msg_list = [
+            this_t,
+            this_timestamp,
+            this_state_signal,
+            neighbor_node.processed_signal,
+            this_x,
+            this_z,
+            this_lambda
+        ]
+
+        send_msg = ""
+        
+        for msg in send_msg_list:
+            send_msg += str(msg)
+            send_msg += SEP
         print ('Sending ', send_msg, ' to ', s.getpeername())
 
         #Reset processed signal
