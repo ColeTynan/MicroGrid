@@ -2,7 +2,7 @@
 #! /usr/bin/expect
 #FORMAT: ./send_to_PIs.sh file_to_send.py file_containing_IPs.txt folder
 
-DEFAULT_IP='/mnt/c/Users/cole/Documents/Internship_Work/microgrid/sync/IP.txt'
+DEFAULT_IP='/mnt/c/Users/cole/Documents/Internship_Work/microgrid/sync/updatedIP.txt'
 
 file=$1
 IPs=$2

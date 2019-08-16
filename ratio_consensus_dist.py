@@ -12,7 +12,7 @@ import struct
 import csv
 #TODO: Consider adding argparse to handle cmd line options such as -d for debugging
 
-DEBUG = True
+DEBUG = False
 #class to house information about the neighbors of the PI
 class Neighbor:
 	def __init__(self, theSocket):
@@ -124,16 +124,15 @@ while True:
 		time.sleep(1)
 
 recvsocket.setblocking(0)
-recvsocket.listen(3)
-
+recvsocket.listen(0)
 #Pass the program the file containing all the information about itself (gmin, gmax, neighbors, etc) as first param, data file with pr as second
 #NOTE: Consider the question: If only one node actually physically receives Pr, then should every node have access to it? That is, should the input file for Pr be given
 #to every PI be default, or maybe accessible remotely by the PI iff it is a member of I.
 
 try:
 	infoFileName = sys.argv[1] 
-except:	#default value assigned if nothing passed to program
-	infoFileName = '/home/pi/sync/rcinput.txt'
+except:	#default value assigned if nothing passed to program (four pi setup in ring structure)
+	infoFileName = '/home/pi/graphs/ring4.txt'
 
 infoFile = open(infoFileName)
 
@@ -141,7 +140,7 @@ infoFile = open(infoFileName)
 
 #Read the info for this specific DER
 #specifies gmin, gmax, if the DER is in I, etc. 
-#FORMAT: g_min g_max In_I_bool(0 or 1) |I| 
+#FORMAT: g_min g_max In_I_bool(0 or 1) |I| is_timer(1/0) num_in_grid(integer)
 try:
 	info = infoFile.readline()
 	info = info.split()
@@ -154,25 +153,21 @@ try:
 	sizeOfI = int(info[3])
 	if int(info[4]) != 0:
 		isTimer = True
+	num_in_grid = int(info[5])
 except Exception as e:
 	print e
 	print "Check input file is correct"
 	exit(0)
 
-print 'inI = ', inI
-print 'isTimer = ', isTimer
+if DEBUG:
+	print 'inI = ', inI
+	print 'isTimer = ', isTimer
 
 try:
 	signalFileName = sys.argv[2]
 except: 
 	#if inI:
-		"""
-		print 'ERROR: ', e
-		print 'If the DER is in I, it must take the signal input file as a parameter.'
-		print FORMAT
-		exit(0)
-		"""
-		signalFileName = 'reg-d.CSV'
+	signalFileName = 'reg-d-abridged.CSV'
 #	else:
 		#pass
 
@@ -181,7 +176,8 @@ except:
 
 #if in I, read the input CSV file (NOTE: maybe make this a command line argument to test in future with much smaller data sizes?)
 
-
+#the step size h is declared here TODO: if this approach fails to get good results, need to find a way to share the max degree of the grid to all the agents
+step_size = 1.0/float(num_in_grid - 1)
 
  #We start by seeking out neighbors. some fail to accept connections, we wait for them to come online
 for line in infoFile:
@@ -276,13 +272,8 @@ with open('output.CSV', 'w+') as output_file:
 			if GO and isTimer and not SEND_NO_GO:
 				endTime = time.time()
 				if endTime - startTime >= time_limit:
-					print 'endtime reached'
 					STOP = True
-					"""
-					for key,neigh in neighbors.items():
-						if neigh and neigh.sock not in outputs:
-							outputs.append(neigh.sock)
-					"""	
+			
 			readable, writable, exceptional = select.select(inputs, outputs, inputs, 0)			#see which sockets are ready to be writting, read from and which are throwing exceptions
 			#resetting the whole thing
 		
@@ -317,7 +308,8 @@ with open('output.CSV', 'w+') as output_file:
 							#Format of message after split: t_value[0] k_value[1] y_value[2] z_value[3] 
 							#try: 
 								message = message.split('/')
-								print 'received ', message, 'from ', neighbor_ip
+								if DEBUG:
+									print 'received ', message, 'from ', neighbor_ip
 								if message[0] == noGoMessage:
 									if DEBUG:
 										print 'received NOGO from ', neighbor_ip
@@ -336,19 +328,19 @@ with open('output.CSV', 'w+') as output_file:
 										if allConnected:
 											GO = True
 											SEND_GO = True
+											startTime = time.time()
 										else:
-											print 'NO_GO flag set'
+											if DEBUG:
+												print 'NO_GO flag set'
 											SEND_NO_GO = True
-								elif message[0] == endMessage:				#NOTE: Probably don't need this.
-									neighbors[neighbor_ip[0]].setReady(False)
-									print 'received endInner from ', neighbor_ip
 									#endCtr += 1
 									#if endCtr == len(neighbors):
 									#	pleaseContinue = True
 									#TODO: figure out a way to handle neighbors getting ahead or behind with the iteration
-								elif message[0] == stopMessage:				#Received order to stop processing
+								elif message[0] == stopMessage:				#if Received STOP message, we can stop processing messages and propogate the STOP signal
 									if int(message[1]) == t:
 										STOP = True
+										neighbors[neighbor_ip[0]].setReady(False)
 								elif message[0] == '':
 									pass
 
@@ -406,12 +398,6 @@ with open('output.CSV', 'w+') as output_file:
 					if DEBUG: 
 						print 'Sending NO_GO'
 					s.send(":" + noGoMessage)
-				"""
-				if STOP:
-					if DEBUG:	
-						print 'Sending STOP message'
-					s.send(":" + stopMessage)
-				"""
 				if GO:	
 					if SEND_GO:
 						s.send(":" + goMessage)
@@ -422,37 +408,35 @@ with open('output.CSV', 'w+') as output_file:
 					if DEBUG:
 						print 'Sending ', send_mssg, ' to ', s.getpeername()
 					s.send(send_mssg)
-					
 					outputs.remove(s)
 			#End sending loop
-			
-			if STOP:
-				print 'sending stop'
-				for key,neigh in neighbors.items():
-					neigh.sock.send(":" + stopMessage + "/" + str(t))
 
 			#Resetting flags
 			SEND_NO_GO = False
 			SEND_GO = False
+
+			#Time's up, light the flame of Gondor
+			if STOP:
+				for key,neigh in neighbors.items():
+					neigh.sock.send(":" + stopMessage + "/" + str(t))
 
 			syncCounter = 0
 			#check if we have updated timestamps from every neighbor
 			for key, neigh in neighbors.items():
 				if neigh:
 					if (neigh.k >= k):
-						syncCounter += 1
-						#print "sync count incremented to ", syncCounter, ". K will increment when it is ", len(neighbors)
+						syncCounter += 1			#NOTE: may be more scalable to do this while receiving data rather than separately 
 
-			#TODO: convert this to new version of RC
 			if syncCounter == len(neighbors):
-				thisY[k + 1] = thisY[k + 1]/float(len(neighbors) + 1)				#perform the rc calculations
-				thisZ[k + 1] = thisZ[k + 1]/float(len(neighbors) + 1)				#perform the rc calculations
+				thisY[k + 1] = thisY[k + 1]*step_size + (1.0 - len(neighbors)*step_size)*thisY[k]				#perform the rc calculations
+				thisZ[k + 1] = thisZ[k + 1]*step_size + (1.0 - len(neighbors)*step_size)*thisZ[k]		#perform the rc calculations
 				k += 1
-				thisY[k + 1] += (thisY[k]) 																	#add the next value
-				thisZ[k + 1] += (thisZ[k]) 																	#add the next value
+				#thisY[k + 1] += (thisY[k]) 																	#add the next value
+				#thisZ[k + 1] += (thisZ[k]) 																	#add the next value
 
 				for key,neigh in neighbors.items():
-					outputs.append(neigh.sock)
+					if neigh.sock not in outputs:
+						outputs.append(neigh.sock)
 			elif syncCounter > len(neighbors):
 				print 'ERROR: syncCount greater than number of neighbors.'
 				print 'syncCount = ', syncCounter
