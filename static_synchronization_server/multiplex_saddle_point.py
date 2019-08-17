@@ -223,7 +223,7 @@ while not_disconnected:
     for neighbor_node in neighbors.values():
         print("Neighbor IP: ", str(neighbor_node.ip_address))
         print("Neighbor Timestamp: ", str(neighbor_node.timestamp))
-    print("This Y Val: ", this_y_val)
+    print("This Y Val: ", this_x)
     readable, writable, exceptional = select.select(inputs, outputs, totalSockets)
     '''
     readable,writable,exceptional
@@ -424,11 +424,13 @@ while not_disconnected:
             all_sent_data = False
 
     if received_all_timestamps and all_neighbors_processed and all_sent_data:
+        
+        print("==========================Updating Values before next timestamp==================")
+        
+        this_x_dot = float( -1 * ( INSERT EQUATION ) - this_lambda )
+        this_z_dot = float( -1 * max_neighbors * this_lambda )
+        this_lambda_dot = this_x + max_neighbors * this_z - P_ref * v
 
-        print("=================Proceeding to next timestamp=====================")
-
-        #First update the y value
-        this_y_val = (this_y_val * (1 - (len(neighbors)/max_neighbors)))
         print("Neighbors : ", neighbors.values())
         for neighbor_node in neighbors.values():
             
@@ -436,8 +438,8 @@ while not_disconnected:
             print("Timestamp values : ", neighbor_node.timestamp_vals)
           
             #Before proceeding, we update this y_val
-            this_y_val += float(neighbor_node.timestamp_vals[this_timestamp % 3] * (1/max_neighbors))
-            
+            this_z_dot += float( neighbor_node.timestamp_lambda_vals[this_timestamp % 3] )
+            this_lambda_dot -= float( neighbor_node.timestamp_z_vals[this_timestamp % 3] )
             #Reset variables
             neighbor_node.processed_bool = False
             neighbor_node.updated_timestamp_bool = False
@@ -448,7 +450,19 @@ while not_disconnected:
             neighbor_socket = neighbor_node.socket
             if neighbor_socket not in outputs:
                 outputs.append(neighbor_socket)
+
+
+        print("==================Incrementing Values=================")
+        this_x = this_x + ALPHA_STEP * this_x_dot
+        this_z = this_z + ALPHA_STEP * this_z_dot
+        this_lambda = this_lambda + ALPHA_STEP * this_lambda_dot
+
+        if this_x < this_gmin:
+            this_x = this_gmin
+        if this_x > this-gmax:
+            this_x = this_gmax
         
+        print("=================Proceeding to next timestamp=====================")
         this_timestamp+=1
 
     ## ===== Process End for next iteration subroutine ===== ##
