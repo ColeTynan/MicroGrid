@@ -3,11 +3,11 @@ import socket
 import sys
 import queue
 import time
-from neighbor_node import NeighborNode
+from neighbor_node_ratio_consensus import NeighborNode
 import copy
 
 # == Subroutine to get this device's IP address == #
-input_file = open("multiplex_input.txt", "r")
+input_file = open("multiplex_ratio_consensus_input.txt", "r")
 full_ip_address = input_file.readline()
 full_ip_address = full_ip_address.split(":")
 server_address = (full_ip_address[0], int(full_ip_address[1]))

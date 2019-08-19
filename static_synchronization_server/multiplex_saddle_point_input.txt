@@ -1,4 +1,7 @@
-this_ip_address
-gmin gmax initialization_set_bool initialization_set_cardinality init_x init_z init_lambda
-neighbor_1
-neighbor_2
+this_ip_address:this_port
+gmin gmax initialization_set_bool initialization_set_cardinality init_Pref init_v
+init_x init_z init_lambda ALPHA_STEP
+equation_multiplier equation_shifter equation_exponential
+neighbor_1_ip:neighbor_1_port
+neighbor_2_ip:neighbor_2_port
+...

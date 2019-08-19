@@ -7,7 +7,7 @@ from neighbor_node_saddle_point import NeighborNode
 import copy
 
 # == Subroutine to get this device's IP address == #
-input_file = open("multiplex_ratio_consensus_input.txt", "r")
+input_file = open("multiplex_saddle_point_input.txt", "r")
 full_ip_address = input_file.readline()
 full_ip_address = full_ip_address.split(":")
 server_address = (full_ip_address[0], int(full_ip_address[1]))
@@ -91,9 +91,22 @@ this_gmin = int(characteristics[0])
 this_gmax = int(characteristics[1])
 this_initialization_node = int(characteristics[2])
 initialization_set_cardinality = int(characteristics[3])
-this_x = characteristics[4]
-this_z = characteristics[5]
-this_lambda = characteristics[6]
+init_Pref = float(characteristics[4])
+init_v = float(characteristics[5])
+
+input_vars = input_file.readline()
+input_vars = input_vars.split()
+this_x = float(characteristics[0])
+this_z = float(characteristics[1])
+this_lambda = float(characteristics[2])
+
+input_equation_vars = input_file.readline()
+input_equation_vars = input_file.split()
+equation_multiplier = float(input_equation_vars[0])
+equation_shifter = float(input_equation_vars[1])
+equation_exponential = float(input_equation_vars[2])
+ALPHA_STEP = float(input_equation_vars[3])
+
 # === End of subroutine === #
 
 # === Subroutine to process list of neighbors and initialize neighbors === #
@@ -427,9 +440,9 @@ while not_disconnected:
         
         print("==========================Updating Values before next timestamp==================")
         
-        this_x_dot = float( -1 * ( INSERT EQUATION ) - this_lambda )
+        this_x_dot = float( -1 * ( (equation_multiplier * this_x)**equation_exponential + equation_shifter ) - this_lambda )
         this_z_dot = float( -1 * max_neighbors * this_lambda )
-        this_lambda_dot = this_x + max_neighbors * this_z - P_ref * v
+        this_lambda_dot = this_x + max_neighbors * this_z - init_Pref * init_v
 
         print("Neighbors : ", neighbors.values())
         for neighbor_node in neighbors.values():
@@ -459,7 +472,7 @@ while not_disconnected:
 
         if this_x < this_gmin:
             this_x = this_gmin
-        if this_x > this-gmax:
+        if this_x > this_gmax:
             this_x = this_gmax
         
         print("=================Proceeding to next timestamp=====================")
