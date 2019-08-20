@@ -96,16 +96,16 @@ init_v = float(characteristics[5])
 
 input_vars = input_file.readline()
 input_vars = input_vars.split()
-this_x = float(characteristics[0])
-this_z = float(characteristics[1])
-this_lambda = float(characteristics[2])
+this_x = float(input_vars[0])
+this_z = float(input_vars[1])
+this_lambda = float(input_vars[2])
+ALPHA_STEP = float(input_vars[3])
 
 input_equation_vars = input_file.readline()
-input_equation_vars = input_file.split()
+input_equation_vars = input_equation_vars.split()
 equation_multiplier = float(input_equation_vars[0])
 equation_shifter = float(input_equation_vars[1])
 equation_exponential = float(input_equation_vars[2])
-ALPHA_STEP = float(input_equation_vars[3])
 
 # === End of subroutine === #
 
@@ -180,7 +180,7 @@ start_time_bool = False
 end_time = time.time()
 
 this_t = 0
-t_max = 10
+t_max = 1
 
 #===== Main Program ====#
 while not_disconnected:
@@ -196,7 +196,7 @@ while not_disconnected:
     if this_initialization_node and all_nodes_connected and this_t != t_max:
         this_state_signal = 0
         end_time = time.time()
-        if (end_time - start_time) >= 1:
+        if (end_time - start_time) >= 20:
             print ("+++++++++++++++++++++++++INCREMENTING T @ " + str(end_time - start_time))
 
             #Write to output file
@@ -205,7 +205,6 @@ while not_disconnected:
             this_t += 1
             start_time = time.time()
             this_y_val = float(characteristics[4]) + float(this_t)
-
             print ("====================RESET=========================")
             if all_nodes_connected:
                 for neighbor_node in neighbors.values():
@@ -236,7 +235,7 @@ while not_disconnected:
     for neighbor_node in neighbors.values():
         print("Neighbor IP: ", str(neighbor_node.ip_address))
         print("Neighbor Timestamp: ", str(neighbor_node.timestamp))
-    print("This Y Val: ", this_x)
+    print("This X Val: ", this_x)
     readable, writable, exceptional = select.select(inputs, outputs, totalSockets)
     '''
     readable,writable,exceptional
@@ -442,7 +441,7 @@ while not_disconnected:
         
         this_x_dot = float( -1 * ( (equation_multiplier * this_x)**equation_exponential + equation_shifter ) - this_lambda )
         this_z_dot = float( -1 * max_neighbors * this_lambda )
-        this_lambda_dot = this_x + max_neighbors * this_z - init_Pref * init_v
+        this_lambda_dot = this_x_dot + max_neighbors * this_z - init_Pref * init_v
 
         print("Neighbors : ", neighbors.values())
         for neighbor_node in neighbors.values():
