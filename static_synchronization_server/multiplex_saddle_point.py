@@ -101,6 +101,10 @@ this_z = float(input_vars[1])
 this_lambda = float(input_vars[2])
 ALPHA_STEP = float(input_vars[3])
 
+this_x_dot = float(0)
+this_z_dot = float(0)
+this_lambda_dot = float(0)
+
 input_equation_vars = input_file.readline()
 input_equation_vars = input_equation_vars.split()
 equation_multiplier = float(input_equation_vars[0])
@@ -117,7 +121,8 @@ for x in input_file:
     neighbor_port = string_parse[1]
    
     new_neighbor = NeighborNode(neighbor_ip_address, neighbor_port)
-    new_neighbor.timestamp_vals = {}
+    new_neighbor.timestamp_z_vals = {}
+    new_neighbor.timestamp_lambda_vals = {}
     neighbors[neighbor_ip_address] = new_neighbor
 # === End of subroutine === #
 
@@ -185,8 +190,8 @@ t_max = 1
 #===== Main Program ====#
 while not_disconnected:
     
-    print ("This Initialization Bool : ", str(this_initialization_node))
-    print ("All connected : ", str(all_nodes_connected))
+    #print ("This Initialization Bool : ", str(this_initialization_node))
+    #print ("All connected : ", str(all_nodes_connected))
 
     if all_nodes_connected and not start_time_bool:
         start_time = time.time()
@@ -196,7 +201,8 @@ while not_disconnected:
     if this_initialization_node and all_nodes_connected and this_t != t_max:
         this_state_signal = 0
         end_time = time.time()
-        if (end_time - start_time) >= 20:
+        if (end_time - start_time) >= 60:
+            
             print ("+++++++++++++++++++++++++INCREMENTING T @ " + str(end_time - start_time))
 
             #Write to output file
@@ -230,12 +236,12 @@ while not_disconnected:
 
     #print("Inputs: ", inputs)
     #print("Outputs: ", outputs)
-    print("This Timestamp: ", this_timestamp)
-    print("Neighbors: =====")
-    for neighbor_node in neighbors.values():
-        print("Neighbor IP: ", str(neighbor_node.ip_address))
-        print("Neighbor Timestamp: ", str(neighbor_node.timestamp))
-    print("This X Val: ", this_x)
+    #print("This Timestamp: ", this_timestamp)
+    #print("Neighbors: =====")
+    #for neighbor_node in neighbors.values():
+    #    print("Neighbor IP: ", str(neighbor_node.ip_address))
+    #    print("Neighbor Timestamp: ", str(neighbor_node.timestamp))
+    #print("This X Val: ", this_x)
     readable, writable, exceptional = select.select(inputs, outputs, totalSockets)
     '''
     readable,writable,exceptional
@@ -325,7 +331,6 @@ while not_disconnected:
                         #Update timestamp and reset variables
                         this_t = other_t
                         this_timestamp = 0
-                        this_x = float(characteristics[4]) + float(this_t)
 
                         for neighbor_address in neighbors:
                             neighbor_node = neighbors[neighbor_address]
@@ -340,7 +345,7 @@ while not_disconnected:
 
 
                     #Check if the data we received corresponding to a returning 'processed' signal
-                    print("other_ip_address :", other_ip_address)
+                    #print("other_ip_address :", other_ip_address)
                     neighbor_node = neighbors[other_ip_address]
                     if other_t == this_t:
                         #print("========Proceed=======", s)
@@ -437,19 +442,35 @@ while not_disconnected:
 
     if received_all_timestamps and all_neighbors_processed and all_sent_data:
         
-        print("==========================Updating Values before next timestamp==================")
+        #input("Press Enter to Continue....")
+        #print("==========================Updating Values before next timestamp==================")
         
-        this_x_dot = float( -1 * ( (equation_multiplier * this_x)**equation_exponential + equation_shifter ) - this_lambda )
-        this_z_dot = float( -1 * max_neighbors * this_lambda )
-        this_lambda_dot = this_x_dot + max_neighbors * this_z - init_Pref * init_v
+        #print("Current X ", this_x)
+        #print("Current Z ", this_z)
+        #print("Current Lambda ", this_lambda)
 
-        print("Neighbors : ", neighbors.values())
+        num_neighbors = len(neighbors)
+        #print("num neighbors : ", num_neighbors)
+        this_x_dot = float( -1 * ( (equation_multiplier * this_x)**equation_exponential + equation_shifter ) - this_lambda )
+        this_z_dot = float( -1 * num_neighbors * this_lambda )
+        this_lambda_dot = this_x + num_neighbors * this_z - init_Pref * init_v
+
+        #print(" ============== ")
+
+        #print("X Dot 1 ", this_x_dot)
+        #print("Z Dot 1 ", this_z_dot)
+        #print("Lambda Dot 1 ", this_lambda_dot)
+
+        #print(" ============== ")
+
+        #print("===============")
+
         for neighbor_node in neighbors.values():
             
-            print("Printing neighbor node name : ", neighbor_node.ip_address)
-            print("Timestamp values : ", neighbor_node.timestamp_vals)
-          
             #Before proceeding, we update this y_val
+            #print("Neighbor Node Lambda Val: ", neighbor_node.timestamp_lambda_vals[this_timestamp %3])
+            #print("Neighbor Node Z Val: ", neighbor_node.timestamp_z_vals[this_timestamp % 3])
+
             this_z_dot += float( neighbor_node.timestamp_lambda_vals[this_timestamp % 3] )
             this_lambda_dot -= float( neighbor_node.timestamp_z_vals[this_timestamp % 3] )
             #Reset variables
@@ -463,8 +484,15 @@ while not_disconnected:
             if neighbor_socket not in outputs:
                 outputs.append(neighbor_socket)
 
+        #print(" ============== ")
 
-        print("==================Incrementing Values=================")
+        #print("X Dot 2 ", this_x_dot)
+        #print("Z Dot 2 ", this_z_dot)
+        #print("Lambda Dot 2 ", this_lambda_dot)
+
+        #print(" ============== ")
+
+        #print("==================Incrementing Values=================")
         this_x = this_x + ALPHA_STEP * this_x_dot
         this_z = this_z + ALPHA_STEP * this_z_dot
         this_lambda = this_lambda + ALPHA_STEP * this_lambda_dot
@@ -474,7 +502,12 @@ while not_disconnected:
         if this_x > this_gmax:
             this_x = this_gmax
         
-        print("=================Proceeding to next timestamp=====================")
+        #print("Current X ", this_x)
+        #print("Current Z ", this_z)
+        #print("Current Lambda ", this_lambda)
+
+
+        #print("=================Proceeding to next timestamp=====================")
         this_timestamp+=1
 
     ## ===== Process End for next iteration subroutine ===== ##
@@ -514,6 +547,7 @@ print ('t for this machine ', full_ip_address , ': ', this_t)
 print ('k for this machine ', full_ip_address , ': ', this_timestamp)
 print ('State of this machine', full_ip_address , ': ', this_state_signal)
 print ("Printing timestamps below of length: " + str(len(neighbors)))
+print ("X for this machine : ", this_x)
 for neighbor_node in neighbors.values():
     neighbor_timestamp = neighbor_node.timestamp
     neighbor_ip_address = neighbor_node.ip_address
