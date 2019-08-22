@@ -1,5 +1,6 @@
+#!/usr/bin/env python
 #aaatio Consensus (and later, optimization as well): handles synchronization between a variable network of rpis. takes an input file as a commmand line param, which houses the labels (e.g. r1\n r2) of the neighbors
-#neighbors of the machine by passing an input file containing all the neighbors via the command line.
+#neighbors of the machine by passing an input file containing all the neighbors via the command line. Run with 
 #todo: think of edge cases (e.g. different graph structures, varying input values, etc.) and test these as well
 
 import select
@@ -12,7 +13,14 @@ import struct
 import csv
 #TODO: Consider adding argparse to handle cmd line options such as -d for debugging
 
-DEBUG = False
+DEBUG = True
+"""
+try:	
+	if int(sys.argv[1]) == 1:
+		DEBUG = True
+except:
+	pass
+"""
 #class to house information about the neighbors of the PI
 class Neighbor:
 	def __init__(self, theSocket):
@@ -97,8 +105,6 @@ PORT = 20000
 THIS_IP = get_ip_address('eth0')
 
 #loop variables and messages
-tmax = 0 								#Maximum number of time intervals (outer loop) that will be determined by reading the signal input file
-t = 1										#iterator for outer loop TODO: have this be a parameter read from a file
 goMessage = "GO"				#message that is received and sent, indicating that sending and receving of data should begin
 noGoMessage = "NO_GO"		#message that is sent by a Pi that is not yet fully connected, indicating a shutdown of the system of Pis should begin
 endMessage = "END"			#message sent when inner loop ends, indicates to other Pis to stop receiving 
@@ -134,7 +140,11 @@ try:
 except:	#default value assigned if nothing passed to program (four pi setup in ring structure)
 	infoFileName = '/home/pi/graphs/ring4.txt'
 
-infoFile = open(infoFileName)
+try: 
+	infoFile = open(infoFileName)
+except: 
+	print "Invalid information file, check file and retry"
+	exit(0)
 
 #TODO: set up parsing for information in data file about the DER (if its in I, gmin, gmax, etc) for simplified, just if its the "timer" or not
 
@@ -191,21 +201,22 @@ for line in infoFile:
 		print 'Connection failed with IP', pidb[line]
 		neighbors[pidb[line]] = 0
 
-
+#Init lists, counters, and iteration limits
+tmax = 0																			#Maximum number of time intervals (outer loop) that will be determined by reading the signal input file
+t = 1																					#iterator for outer loop 
+time_limit = 1.0															#Time limit in seconds
+numNeighbors = len(neighbors) + 1						
+allConnected = all_have_connected(neighbors)	#returns true if all neighbors have connected
+thisY = list()
+thisZ = list()
 pr = list()
+
 with open(signalFileName) as pr_input_file:
 	csv_reader = csv.reader(pr_input_file, delimiter=',')
 	for row in csv_reader:
 		pr.append(float(row[1]))
 		tmax += 1
 
-
-#TODO: implement the new version of ratio-consensus
-time_limit = 1.0															#Time limit in seconds
-numNeighbors = len(neighbors) + 1							#TODO: for new implementation of RC we dont use ourselves in the number of neighbors(???) Verify
-allConnected = all_have_connected(neighbors)
-thisY = list()
-thisZ = list()
 
 inputs = [ recvsocket ]
 outputs = [ ]
@@ -218,33 +229,40 @@ for k, v in neighbors.items():
 
 with open('output.CSV', 'w+') as output_file:
 	out_writer = csv.writer(output_file, delimiter=',')
-	#initialize y and z values
-	#open output file
-	if DEBUG:
-		print 'Starting timer...'
 
-	start = time.time()
-
-	#booleans and counters
-	#our i/o while loop 
-	while t <= tmax:	#NOTE: Have this determined by the input file? Either send tmax with GO flag if inI or have it be some hardcoded param for now?
+	while t <= tmax:	
 		k = 0
-		RESET = True
 		startTime = time.time()
 		endTime = startTime
-		END_INNER = False			#NOTE: Does nothing really of any significance, recommend removal
 		STOP = False
-
-		#initialize our y and z values
+		startTime = 0
+		endTime = 0
+		for key,neigh in neighbors.items():
+			if neigh:
+				neigh.reset()
+				if neigh.sock not in outputs:
+					outputs.append(neigh.sock)
+		SEND_GO = False
+		SEND_NO_GO = False
+		GO = False
+		KILLP = False
+		del thisY[:]
+		del thisZ[:]
+		thisY = [0.0]*10000
+		thisZ = [0.0]*10000
+		readyToAdvance = False
+		RESET = False
+		
 		initZ = g_max - g_min
 		initY = 0.0
 		if inI:
-			initY = (pr[t]/float(sizeOfI)) - g_min
+			initY = (pr[t - 1]/float(sizeOfI)) - g_min
 		else: 
 			initY = - g_min
+		thisY[0] = initY
+		thisZ[0] = initZ
 
 		while not STOP:	
-			#Resets all the flags and whatnot
 			if RESET:																
 				if DEBUG:
 					print 'resetting'
@@ -256,14 +274,23 @@ with open('output.CSV', 'w+') as output_file:
 						if neigh.sock not in outputs:
 							outputs.append(neigh.sock)
 				k = 0
+				t = 1
 				SEND_GO = False
 				SEND_NO_GO = False
 				STOP = False
 				GO = False
-				killProcess = False
+				KILLP = False
 				del thisY[:]
-				thisY = [0.0]*10000
-				thisZ = [0.0]*10000
+				del thisZ[:]
+				thisY = [0.0]*100000
+				thisZ = [0.0]*100000
+				#Ratio Consensus init
+				initZ = g_max - g_min
+				initY = 0.0
+				if inI:
+					initY = (pr[t - 1]/float(sizeOfI)) - g_min
+				else: 
+					initY = - g_min
 				thisY[0] = initY
 				thisZ[0] = initZ
 				readyToAdvance = False
@@ -308,15 +335,12 @@ with open('output.CSV', 'w+') as output_file:
 							#Format of message after split: t_value[0] k_value[1] y_value[2] z_value[3] 
 							#try: 
 								message = message.split('/')
-								if DEBUG:
-									print 'received ', message, 'from ', neighbor_ip
 								if message[0] == noGoMessage:
 									if DEBUG:
 										print 'received NOGO from ', neighbor_ip
 									neighbors[neighbor_ip[0]].setReady(False)
 									if GO:
 										GO = False
-										RESET = True
 										SEND_NO_GO = True
 								elif message[0] == goMessage:							#GO flag received, now we can immediately begin performing ratio consensus
 									if DEBUG:
@@ -324,7 +348,7 @@ with open('output.CSV', 'w+') as output_file:
 									neighbors[neighbor_ip[0]].reset()
 									neighbors[neighbor_ip[0]].setReady(True) 
 									
-									if not GO:
+									if not GO and not SEND_NO_GO:
 										if allConnected:
 											GO = True
 											SEND_GO = True
@@ -358,7 +382,7 @@ with open('output.CSV', 'w+') as output_file:
 													thisY[k_value + 1] += y_value 
 													thisZ[k_value + 1] += z_value 
 											else:
-												killProcess = True
+												KILLP = True
 												if DEBUG:
 													print "Out of sync at k = ", k, ", read ", k_value, "from ", neighbor_ip
 													print 'The neighbors current value of k:', neighbors[neighbor_ip[0]].k
@@ -381,7 +405,7 @@ with open('output.CSV', 'w+') as output_file:
 					else:  #if no data is received, end the connection and close the process
 						#no data
 						print 'Socket ', neighbor_ip, 'is unresponsive, closing connection and shutting down.' 
-						killProcess = True
+						KILLP = True
 			#END receiving block
 
 			"""
@@ -393,11 +417,17 @@ with open('output.CSV', 'w+') as output_file:
 
 			#timer checks
 					#message sendin
+			if SEND_NO_GO:
+				for ip, neigh in neighbors.items():
+					if neigh:
+						print 'Sending NO_GO to ', ip
+						neigh.sock.send(":" + noGoMessage)
+				RESET = True
+				SEND_NO_GO = False
+				continue
+
+			#Sending messages and flags
 			for s in writable:
-				if SEND_NO_GO:
-					if DEBUG: 
-						print 'Sending NO_GO'
-					s.send(":" + noGoMessage)
 				if GO:	
 					if SEND_GO:
 						s.send(":" + goMessage)
@@ -411,13 +441,14 @@ with open('output.CSV', 'w+') as output_file:
 					outputs.remove(s)
 			#End sending loop
 
-			#Resetting flags
-			SEND_NO_GO = False
+			#Resetting flag
 			SEND_GO = False
 
 			#Time's up, light the flame of Gondor
 			if STOP:
 				for key,neigh in neighbors.items():
+					if DEBUG: 
+						print 'Sending STOP to ', neigh.sock.getpeername()
 					neigh.sock.send(":" + stopMessage + "/" + str(t))
 
 			syncCounter = 0
@@ -441,13 +472,13 @@ with open('output.CSV', 'w+') as output_file:
 				print 'ERROR: syncCount greater than number of neighbors.'
 				print 'syncCount = ', syncCounter
 				print 'num of neighbors = ', len(neighbors)
-				killProcess = True 
+				KILLP = True 
 
 
 			#Error catching code block
 			for s in exceptional:
 				print 'Socket', s.getpeername(), ' is throwing errors, turning it off and shutting down process'
-				killProcess = True
+				KILLP = True
 
 			#reset all of our variables -- later this will include the ratio-consensus variables
 			#code block checks to see if k needs to be incremented
@@ -455,7 +486,7 @@ with open('output.CSV', 'w+') as output_file:
 			#allconnected check
 
 			#End processes check
-			if killProcess:		
+			if KILLP:		
 				for s in inputs:
 					inputs.remove(s)
 					if s in outputs:
@@ -474,17 +505,15 @@ with open('output.CSV', 'w+') as output_file:
 		if DEBUG:
 			print 'Ending t = ', t , ' with k = ', k
 			#print 'We have averaged the values to be ', thisY[k - 1]
-			print 'Start time = ', startTime-start, 'seconds from start of outer loop'
-			print 'EndTime = ', endTime - start, ' seconds'
 			print 'time elapsed = ',  endTime - startTime, ' seconds'
 
 		t += 1
-		if killProcess:
+		if KILLP:
 			break
 		#Outer loop
 
 #output final time stamps (Debugging)
-if killProcess:
+if KILLP:
 	print 'Had fatal error for this machine at k = ', k
 print 't for machine ', THIS_IP, ': ', t
 
