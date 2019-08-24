@@ -25,15 +25,34 @@ SCRIPT='runratcon.sh'
 GRAPHS=('graphs/ring4.txt' 'graphs/ring8.txt' 'graphs/smallASym1.txt' 'graphs/smallASym2.txt' 'graphs/hook.txt' 'graphs/treeBal7.txt' 'graphs/treeUnb7.txt')
 IP_FILES=('IPs/fourIP.txt' 'IPs/eightIP.txt')
 REF_FILES=('reg-d-abridged.CSV' 'reg-d.CSV' 'reg-d-factor5.CSV')
+SIM_FILES=('runratcon.sh' 'runsadpoint.sh')
 DEF_REF=0
 DEF_IP=0
 DEF_GRAPH=0
-
-GRAPH_I=$1
-REF_I=$2
-IP_I=$3
+DEF_SIM=0
+SIM_I=$1
+GRAPH_I=$2
+REF_I=$3
+IP_I=$4
 
 #~~~ Alternative Method of Choosing Parameters ~~~
+#Prompt for simulation to run
+if [[ -z "$SIM_I" ]]; then
+	echo "Which simulation would you like to test?"
+	echo "Simulations:
+	 1. Ratio Consensus
+	 2. Saddle Point Dynamic
+	 3. DANA (unavailable)"
+	read -n 1 SIM_I
+	echo ""
+fi 
+
+if [[ "$SIM_I" -gt 0 ]]; then
+	SIM_I="$((SIM_I - 1))"
+else
+	SIM_I="$DEF_SIM"
+fi
+
 #prompt for graph structure
 if [[ -z "$GRAPH_I" ]]; then
 	echo "Which graph structure would you like to test?"
@@ -88,6 +107,7 @@ else
 fi
 
 
+SIM_I="${SIM_FILES["$SIM_I"]}"
 GRAPH_I="${GRAPHS["$GRAPH_I"]}"
 IP_I="${IP_FILES["$IP_I"]}"
 REF_I="${REF_FILES["$REF_I"]}"
@@ -99,6 +119,7 @@ echo "$REF_I"
 #clear folder containing all output files in the aggregrator
 `ssh pi@169.254.136.2 "rm -r csvFiles && mkdir csvFiles"`
 while read line; do
-	 `ssh -n -f pi@"$line" "sh -c 'nohup ~/"$SCRIPT" "$GRAPH_I" "$REF_I" > out.txt 2>&1 &'"`
+	 `ssh -n -f pi@"$line" "sh -c 'nohup ~/"$SIM_I" "$GRAPH_I" "$REF_I" > out.txt 2>&1 &'"`
 	 echo "Sent to $line"
 done < "$IP_I"
+

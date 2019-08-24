@@ -13,13 +13,6 @@ import csv
 #TODO: Consider adding argparse to handle cmd line options such as -d for debugging
 
 DEBUG = True
-"""
-try:	
-	if int(sys.argv[1]) == 1:
-		DEBUG = True
-except:
-	pass
-"""
 #class to house information about the neighbors of the PI
 class Neighbor:
 	def __init__(self, theSocket):
@@ -107,15 +100,11 @@ PORT = 20000
 THIS_IP = get_ip_address('eth0')
 
 #loop variables and messages
-costFunctionFile = "costFunction.txt"
 goMessage = "GO"				#message that is received and sent, indicating that sending and receving of data should begin
 noGoMessage = "NO_GO"		#message that is sent by a Pi that is not yet fully connected, indicating a shutdown of the system of Pis should begin
 endMessage = "END"			#message sent when inner loop ends, indicates to other Pis to stop receiving 
 stopMessage = "STOP"		#message send by the timer initially, that will propogate and stop the calculations after a certain amount of time
 FORMAT = "FORMAT = python ratio_consensus_dist.py info_about_der.txt pr_values.csv OR leave blank for defaults"
-
-#dictionary of neighbor objects
-neighbors = {}
 
 #use this socket to receive the incoming connections
 recvsocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -135,25 +124,18 @@ while True:
 recvsocket.setblocking(0)
 recvsocket.listen(0)
 #Pass the program the file containing all the information about itself (gmin, gmax, neighbors, etc) as first param, data file with pr as second
-#NOTE: Consider the question: If only one node actually physically receives Pr, then should every node have access to it? That is, should the input file for Pr be given
 #to every PI be default, or maybe accessible remotely by the PI iff it is a member of I.
 
-try:
-	infoFileName = sys.argv[1] 
-except:	#default value assigned if nothing passed to program (four pi setup in ring structure)
-	infoFileName = '/home/pi/graphs/ring4.txt'
-
-try: 
-	infoFile = open(infoFileName)
-except: 
-	print "Invalid information file, check file and retry"
-	exit(0)
+#file where static information about the pi is located
+infoFileName = '/home/pi/graphs/info.txt'
 
 #TODO: set up parsing for information in data file about the DER (if its in I, gmin, gmax, etc) for simplified, just if its the "timer" or not
 
 #Read the info for this specific DER
 #specifies gmin, gmax, if the DER is in I, etc. 
 #FORMAT: g_min g_max In_I_bool(0 or 1) |I| is_timer(1/0) num_in_grid(integer)
+
+infoFile = open(infoFileName)
 try:
 	info = infoFile.readline()
 	info = info.split()
@@ -166,7 +148,8 @@ try:
 	sizeOfI = int(info[3])
 	if int(info[4]) != 0:
 		isTimer = True
-	num_in_grid = int(info[5])
+	scalar = float(info[5])
+	exp = float(info[6])
 except Exception as e:
 	print e
 	print "Check input file is correct"
@@ -176,19 +159,25 @@ if DEBUG:
 	print 'inI = ', inI
 	print 'isTimer = ', isTimer
 
-try:
-	signalFileName = sys.argv[2]
-except: 
-	#if inI:
-	signalFileName = 'reg-d-abridged.CSV'
-#	else:
-		#pass
-
 #the step size h is declared here 
-step_size = 0.01
+try:
+	neighFileName = sys.argv[1] 
+except:	#default value assigned if nothing passed to program (four pi setup in ring structure)
+	neighFileName = '/home/pi/graphs/ring4.txt'
+
+try: 
+	neighFile = open(neighFileName)
+except: 
+	print "Invalid neighbor file, check file and retry"
+	exit(0)
 
  #We start by seeking out neighbors. some fail to accept connections, we wait for them to come online
-for line in infoFile:
+
+num_agents = neighFile.readline()			#NOT USED, just need to get the file iterator to the right place
+#dictionary of neighbor objects
+neighbors = {}
+
+for line in neighFile:
 	newsock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 	try:
 		line = line.rstrip('\n')
@@ -199,46 +188,49 @@ for line in infoFile:
 		print 'Connection failed with IP', pidb[line]
 		neighbors[pidb[line]] = 0
 
-#Init lists, counters, and iteration limits
-tmax = 0																			#Maximum number of time intervals (outer loop) that will be determined by reading the signal input file
-t = 1																					#iterator for outer loop 
-time_limit = 1.0															#Time limit in seconds
-numNeighbors = len(neighbors)
-allConnected = all_have_connected(neighbors)	#returns true if all neighbors have connected
-thisX = list()
-thisZ = list()
-thisL = list()
-pr = list()
+#Parse signal file
+try:
+	signalFileName = sys.argv[2]
+except: 
+	#if inI:
+	signalFileName = 'reg-d-abridged.CSV'
+#	else:
+		#pass
 
+pr = list()
+tmax = 0																			#Maximum number of time intervals (outer loop) that will be determined by reading the signal input file
 with open(signalFileName) as pr_input_file:
 	csv_reader = csv.reader(pr_input_file, delimiter=',')
 	for row in csv_reader:
 		pr.append(float(row[1]))
 		tmax += 1
 
-with open(costFunctionFile) as input_file:
-	funct = input_file.readline()
-	funct = funct.split(funct)
-	scalar = float(funct[0])
-	exp = float(funct[1])
+#Init lists, counters, and iteration limits
+t = 1																					#iterator for outer loop 
+time_limit = 1.0															#Time limit in seconds
+step_size = 0.01															#can play with this value a little
+allConnected = all_have_connected(neighbors)	#returns true if all neighbors have connected
+thisX = list()
+thisZ = list()
+thisL = list()
 
+#the lists for inputting sockets to select
 inputs = [ recvsocket ]
 outputs = [ ]
 exceptional = [ ]
 	
+#add all available sockets to the inputs list
 for k, v in neighbors.items():
 	if v:
 		v.sock.setblocking(0)
 		inputs.append(v.sock)
 
+#MAIN LOOP: Here we will take input and send output to all neighbors
 with open('output.CSV', 'w+') as output_file:
 	out_writer = csv.writer(output_file, delimiter=',')
 
 	while t <= tmax:	
 		k = 0
-		startTime = time.time()
-		endTime = startTime
-		STOP = False
 		startTime = 0
 		endTime = 0
 		for key,neigh in neighbors.items():
@@ -250,6 +242,9 @@ with open('output.CSV', 'w+') as output_file:
 		SEND_NO_GO = False
 		GO = False
 		KILLP = False
+		STOP = False
+
+		#Saddle-Point Dynamics initialization of variables
 		del thisX[:]
 		del thisZ[:]
 		del thisL[:]
@@ -259,48 +254,21 @@ with open('output.CSV', 'w+') as output_file:
 		readyToAdvance = False
 		RESET = False
 		
+		#these, apparently, can be initialized to pretty much anything
 		thisX[0] = 0.0
 		thisZ[0] = 0.0
 		thisL[0] = 0.0
 
 		while not STOP:	
-			if RESET:																
-				if DEBUG:
-					print 'resetting'
-				startTime = 0
-				endTime = 0
-				for key,neigh in neighbors.items():
-					if neigh:
-						neigh.reset()
-						if neigh.sock not in outputs:
-							outputs.append(neigh.sock)
-				k = 0
-				t = 1
-				SEND_GO = False
-				SEND_NO_GO = False
-				STOP = False
-				GO = False
-				KILLP = False
-				del thisX[:]
-				del thisZ[:]
-				del thisL[:]
-				thisX = [0.0]*100000
-				thisZ = [0.0]*100000
-				thisL = [0.0]*100000
-				thisX[0] = 0.0
-				thisZ[0] = 0.0
-				thisL[0] = 0.0
-				readyToAdvance = False
-				RESET = False
-			#END Reset
+			#Checking if time-limit has been reached yet (if the timer) and 
 			if GO and isTimer and not SEND_NO_GO:
 				endTime = time.time()
 				if endTime - startTime >= time_limit:
 					STOP = True
+
+			readable, writable, exceptional = select.select(inputs, outputs, inputs, 0)			#see which sockets are ready to be written to, read from, and which are throwing exceptions
+
 			
-			readable, writable, exceptional = select.select(inputs, outputs, inputs, 0)			#see which sockets are ready to be writting, read from and which are throwing exceptions
-			#resetting the whole thing
-		
 			if isTimer and not GO and allConnected:
 				if DEBUG:
 					print 'Timer is setting GO flag and SEND_GO flag'
@@ -329,76 +297,75 @@ with open('output.CSV', 'w+') as output_file:
 						#Split input up by message separator. 
 						dataSplit = data.split(':')
 						for message in dataSplit:
-							#Format of message after split: t_value[0] k_value[1] y_value[2] z_value[3] 
-							#try: 
-								message = message.split('/')
-								if message[0] == noGoMessage:
-									if DEBUG:
-										print 'received NOGO from ', neighbor_ip
-									neighbors[neighbor_ip[0]].setReady(False)
-									if GO:
-										GO = False
+							#Format of message after split: t_value[0] k_value[1] x_value[2] z_value[3] l_value[4]
+							message = message.split('/')
+							if message[0] == noGoMessage:
+								if DEBUG:
+									print 'received NOGO from ', neighbor_ip
+								neighbors[neighbor_ip[0]].setReady(False)
+								if GO:
+									GO = False
+									SEND_NO_GO = True
+							elif message[0] == goMessage:							#GO flag received, now we can immediately begin performing ratio consensus
+								if DEBUG:
+									print 'received GO from ', neighbor_ip
+								neighbors[neighbor_ip[0]].reset()
+								neighbors[neighbor_ip[0]].setReady(True) 
+								
+								if not GO and not SEND_NO_GO:
+									if allConnected:
+										GO = True
+										SEND_GO = True
+										startTime = time.time()
+									else:
+										if DEBUG:
+											print 'NO_GO flag set'
 										SEND_NO_GO = True
-								elif message[0] == goMessage:							#GO flag received, now we can immediately begin performing ratio consensus
-									if DEBUG:
-										print 'received GO from ', neighbor_ip
-									neighbors[neighbor_ip[0]].reset()
-									neighbors[neighbor_ip[0]].setReady(True) 
-									
-									if not GO and not SEND_NO_GO:
-										if allConnected:
-											GO = True
-											SEND_GO = True
-											startTime = time.time()
+								#endCtr += 1
+								#if endCtr == len(neighbors):
+								#	pleaseContinue = True
+								#TODO: figure out a way to handle neighbors getting ahead or behind with the iteration
+							elif message[0] == stopMessage:				#if Received STOP message, we can stop processing messages and propogate the STOP signal
+								if int(message[1]) == t:
+									STOP = True
+									neighbors[neighbor_ip[0]].setReady(False)
+							elif message[0] == '':
+								pass
+
+							elif neighbors[neighbor_ip[0]].isReady():									#if this neighbor has sent the GO flag, we will start reading its input
+								t_value = int(message[0])
+								k_value = int(message[1])
+								x_value = float(message[2])
+								z_value = float(message[3])
+								l_value = float(message[4])
+
+								try:
+									if (t_value == t):
+										if (k_value > neighbors[neighbor_ip[0]].k) and (k_value <= k + 1 ):
+											neighbors[neighbor_ip[0]].k = k_value
+											if not SEND_NO_GO and allConnected:
+												
+												thisZ[k_value + 1] += l_value 
+												thisL[k_value + 1] += z_value
 										else:
+											KILLP = True
 											if DEBUG:
-												print 'NO_GO flag set'
-											SEND_NO_GO = True
-									#endCtr += 1
-									#if endCtr == len(neighbors):
-									#	pleaseContinue = True
-									#TODO: figure out a way to handle neighbors getting ahead or behind with the iteration
-								elif message[0] == stopMessage:				#if Received STOP message, we can stop processing messages and propogate the STOP signal
-									if int(message[1]) == t:
-										STOP = True
-										neighbors[neighbor_ip[0]].setReady(False)
-								elif message[0] == '':
-									pass
-
-								elif neighbors[neighbor_ip[0]].isReady():									#if this neighbor has sent the GO flag, we will start reading its input
-									t_value = int(message[0])
-									k_value = int(message[1])
-									x_value = float(message[2])
-									z_value = float(message[3])
-									l_value = float(message[4])
-
-									try:
-										if (t_value == t):
-											if (k_value > neighbors[neighbor_ip[0]].k) and (k_value <= k + 1 ):
-												neighbors[neighbor_ip[0]].k = k_value
-												if not SEND_NO_GO and allConnected:
-													
-													thisZ[k_value + 1] += l_value 
-													thisL[k_value + 1] += z_value
-											else:
-												KILLP = True
-												if DEBUG:
-													print "Out of sync at k = ", k, ", read ", k_value, "from ", neighbor_ip
-													print 'The neighbors current value of k:', neighbors[neighbor_ip[0]].k
-													print 'k_value > neighbors[neighbor_ip[0]].k): ', (k_value > neighbors[neighbor_ip[0]].k) 
-													print '(k_value <= k + 1 ):', (k_value <= k + 1 )
-										elif t < t_value:
-											if DEBUG:
-												print 'We have a neighbor on a higher t: ', neighbor_ip, ' with neighbor t = ', t_value, ' and our t: ', t
+												print "Out of sync at k = ", k, ", read ", k_value, "from ", neighbor_ip
 												print 'The neighbors current value of k:', neighbors[neighbor_ip[0]].k
 												print 'k_value > neighbors[neighbor_ip[0]].k): ', (k_value > neighbors[neighbor_ip[0]].k) 
 												print '(k_value <= k + 1 ):', (k_value <= k + 1 )
-											neighbors[neighbor_ip[0]].messages.put_nowait(data)
-									except IndexError:
-										print 'Tried to access a nonextistent index'
-										print 'len(thisX) = ', len(thisX), 'and tried to access k = ', k_value, 'whle this ders k =', k
-										pass
-																				
+									elif t < t_value:
+										if DEBUG:
+											print 'We have a neighbor on a higher t: ', neighbor_ip, ' with neighbor t = ', t_value, ' and our t: ', t
+											print 'The neighbors current value of k:', neighbors[neighbor_ip[0]].k
+											print 'k_value > neighbors[neighbor_ip[0]].k): ', (k_value > neighbors[neighbor_ip[0]].k) 
+											print '(k_value <= k + 1 ):', (k_value <= k + 1 )
+										neighbors[neighbor_ip[0]].messages.put_nowait(data)
+								except IndexError:
+									print 'Tried to access a nonextistent index'
+									print 'len(thisX) = ', len(thisX), 'and tried to access k = ', k_value, 'whle this ders k =', k
+									pass
+																			
 
 						#if data END
 					else:  #if no data is received, end the connection and close the process
@@ -407,23 +374,14 @@ with open('output.CSV', 'w+') as output_file:
 						KILLP = True
 			#END receiving block
 
-			"""
-			if pleaseContinue:
-				if DEBUG:
-					print 'if continue block reached, breaking at t = ', t
-				break
-			"""
-
-			#timer checks
-					#message sendin
+			#Send NO_GO and then reset the pi, if SEND_NO_GO flag is set
 			if SEND_NO_GO:
 				for ip, neigh in neighbors.items():
 					if neigh:
 						print 'Sending NO_GO to ', ip
 						neigh.sock.send(":" + noGoMessage)
 				RESET = True
-				SEND_NO_GO = False
-				continue
+				break
 
 			#Sending messages and flags
 			for s in writable:
@@ -432,7 +390,7 @@ with open('output.CSV', 'w+') as output_file:
 						s.send(":" + goMessage)
 						if DEBUG:
 							print 'Sending GO signal to ', s.getpeername()
-					send_mssg = str(t) + "/" + str(k) + "/" + str(thisX[k]) + "/"  + str(thisZ[k]) + "/" str(thisL[k])
+					send_mssg = str(t) + "/" + str(k) + "/" + str(thisX[k]) + "/"  + str(thisZ[k]) + "/" + str(thisL[k])
 					send_mssg = ":" + send_mssg	
 					if DEBUG:
 						print 'Sending ', send_mssg, ' to ', s.getpeername()
@@ -460,21 +418,20 @@ with open('output.CSV', 'w+') as output_file:
 			if syncCounter == len(neighbors):
 				#NOTE: Consider condensing this code
 				thisX[k + 1] += - costFuncPrime(thisX[k], scalar, exp) - thisL[k]
-				thisZ[k + 1] += - float(numNeighbors)*thisL[k]
-				thisL[k + 1] += thisX[k] + numNeighbors*thisZ[k] - (Pr[k] * int(inI))
+				thisZ[k + 1] += - float(len(neighbors))*thisL[k]
+				thisL[k + 1] += thisX[k] + len(neighbors)*thisZ[k] - (pr[t-1] * int(inI))
 
-				thisX[k + 1] = thisX[k] + thisX[k + 1]*step_size				#perform the rc calculations
-				thisZ[k + 1] = thisZ[k] + thisZ[k + 1]*step_size		#perform the rc calculations
-				thisL[k + 1] = thisL[k] + thisL[k + 1]*step_size		#perform the rc calculations
+				thisX[k + 1] = thisX[k] + thisX[k + 1]*step_size				
+				thisZ[k + 1] = thisZ[k] + thisZ[k + 1]*step_size		
+				thisL[k + 1] = thisL[k] + thisL[k + 1]*step_size	
 
-				#Check that x is within the bounds, and normalize
+				#ensure that x is within the bounds
 				if thisX[k + 1] < g_min:
 					thisX[k + 1] = g_min
 				elif thisX[k + 1] > g_max:
 					thisX[k + 1] = g_max
 
 				k += 1
-
 				for key,neigh in neighbors.items():
 					if neigh.sock not in outputs:
 						outputs.append(neigh.sock)
@@ -490,10 +447,7 @@ with open('output.CSV', 'w+') as output_file:
 				print 'Socket', s.getpeername(), ' is throwing errors, turning it off and shutting down process'
 				KILLP = True
 
-			#reset all of our variables -- later this will include the ratio-consensus variables
-			#code block checks to see if k needs to be incremented
-			#thisX[k + 1] should now have the summation of all neighbors y[k] values, time to divide by the number of neighbors + 1
-			#allconnected check
+			
 
 			#End processes check
 			if KILLP:		
@@ -509,20 +463,24 @@ with open('output.CSV', 'w+') as output_file:
 				break
 			#killprocess
 
-		out_writer.writerow([str(t - 1), str(k - 1), str(x[k - 1])])
 
 		if DEBUG:
 			print 'Ending t = ', t , ' with k = ', k
 			#print 'We have averaged the values to be ', thisX[k - 1]
 			print 'time elapsed = ',  endTime - startTime, ' seconds'
+		if RESET:
+			t = 1
+		else:
+			out_writer.writerow([str(t), str(k), str(thisX[k])])
+			t += 1
 
-		t += 1
+		#break out of outer loop if kill process flag is set
 		if KILLP:
 			break
 		#Outer loop
 
-#output final time stamps (Debugging)
 if KILLP:
 	print 'Had fatal error for this machine at k = ', k
-print 't for machine ', THIS_IP, ': ', t
+if DEBUG:
+	print 't for machine ', THIS_IP, ': ', t
 
