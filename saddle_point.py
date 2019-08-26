@@ -207,7 +207,7 @@ with open(signalFileName) as pr_input_file:
 
 #Init lists, counters, and iteration limits
 t = 1																					#iterator for outer loop 
-time_limit = 1.0															#Time limit in seconds
+time_limit = 10.0															#Time limit in seconds
 step_size = 0.01															#can play with this value a little
 allConnected = all_have_connected(neighbors)	#returns true if all neighbors have connected
 thisX = list()
