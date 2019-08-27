@@ -12,7 +12,7 @@ import struct
 import csv
 #TODO: Consider adding argparse to handle cmd line options such as -d for debugging
 
-DEBUG = True
+DEBUG = False
 #class to house information about the neighbors of the PI
 class Neighbor:
 	def __init__(self, theSocket):
@@ -47,7 +47,7 @@ class Neighbor:
 
 #calculate the derivate of a simple a*x^b polynomial (mononomial i guess) given x and return
 def costFuncPrime(x, a, b):
-	return (a*b)*x**(b - 1.0)
+	return float((a*b)*(x**(b - 1.0)))
 
 #returns true if all elements in a dictionary are "True" or they have been created
 def all_true(dict):
@@ -99,6 +99,11 @@ pidb = {'R1': "169.254.86.232",
 PORT = 20000 
 THIS_IP = get_ip_address('eth0')
 
+#parameters for iteration
+time_limit = 10.0															#Time limit in seconds
+rest_time = 1.0																#time between outer loop iterations
+step_size = 0.01															#can play with this value a little
+
 #loop variables and messages
 goMessage = "GO"				#message that is received and sent, indicating that sending and receving of data should begin
 noGoMessage = "NO_GO"		#message that is sent by a Pi that is not yet fully connected, indicating a shutdown of the system of Pis should begin
@@ -129,14 +134,11 @@ recvsocket.listen(0)
 #file where static information about the pi is located
 infoFileName = '/home/pi/graphs/info.txt'
 
-#TODO: set up parsing for information in data file about the DER (if its in I, gmin, gmax, etc) for simplified, just if its the "timer" or not
-
 #Read the info for this specific DER
 #specifies gmin, gmax, if the DER is in I, etc. 
-#FORMAT: g_min g_max In_I_bool(0 or 1) |I| is_timer(1/0) num_in_grid(integer)
+#FORMAT: g_min g_max In_I_bool(0 or 1) |I| is_timer(1/0) costFunctionScalar(some integer > 1) costFunctionExponent(even integer > 1)
 
-infoFile = open(infoFileName)
-try:
+with open(infoFileName) as infoFile:
 	info = infoFile.readline()
 	info = info.split()
 	g_min = float(info[0])
@@ -150,10 +152,6 @@ try:
 		isTimer = True
 	scalar = float(info[5])
 	exp = float(info[6])
-except Exception as e:
-	print e
-	print "Check input file is correct"
-	exit(0)
 
 if DEBUG:
 	print 'inI = ', inI
@@ -207,13 +205,13 @@ with open(signalFileName) as pr_input_file:
 
 #Init lists, counters, and iteration limits
 t = 1																					#iterator for outer loop 
-time_limit = 10.0															#Time limit in seconds
-step_size = 0.01															#can play with this value a little
 allConnected = all_have_connected(neighbors)	#returns true if all neighbors have connected
 thisX = list()
 thisZ = list()
 thisL = list()
-
+xDot = list()
+zDot = list()
+lDot = list()
 #the lists for inputting sockets to select
 inputs = [ recvsocket ]
 outputs = [ ]
@@ -248,16 +246,20 @@ with open('output.CSV', 'w+') as output_file:
 		del thisX[:]
 		del thisZ[:]
 		del thisL[:]
+		del xDot[:]
+		del zDot[:]
+		del lDot[:]
 		thisX = [0.0]*100000
 		thisZ = [0.0]*100000
 		thisL = [0.0]*100000
+		xDot = [0.0]*100000
+		zDot = [0.0]*100000
+		lDot = [0.0]*100000
+
 		readyToAdvance = False
 		RESET = False
 		
 		#these, apparently, can be initialized to pretty much anything
-		thisX[0] = 0.0
-		thisZ[0] = 0.0
-		thisL[0] = 0.0
 
 		while not STOP:	
 			#Checking if time-limit has been reached yet (if the timer) and 
@@ -272,7 +274,7 @@ with open('output.CSV', 'w+') as output_file:
 			if isTimer and not GO and allConnected:
 				if DEBUG:
 					print 'Timer is setting GO flag and SEND_GO flag'
-				time.sleep(time_limit)
+				time.sleep(rest_time)
 				startTime = time.time()
 				SEND_GO = True
 				GO = True
@@ -335,18 +337,16 @@ with open('output.CSV', 'w+') as output_file:
 							elif neighbors[neighbor_ip[0]].isReady():									#if this neighbor has sent the GO flag, we will start reading its input
 								t_value = int(message[0])
 								k_value = int(message[1])
-								x_value = float(message[2])
-								z_value = float(message[3])
-								l_value = float(message[4])
+								z_value = float(message[2])
+								l_value = float(message[3])
 
 								try:
 									if (t_value == t):
 										if (k_value > neighbors[neighbor_ip[0]].k) and (k_value <= k + 1 ):
 											neighbors[neighbor_ip[0]].k = k_value
 											if not SEND_NO_GO and allConnected:
-												
-												thisZ[k_value + 1] += l_value 
-												thisL[k_value + 1] += z_value
+												zDot[k_value] += l_value 
+												lDot[k_value] -= z_value
 										else:
 											KILLP = True
 											if DEBUG:
@@ -390,7 +390,7 @@ with open('output.CSV', 'w+') as output_file:
 						s.send(":" + goMessage)
 						if DEBUG:
 							print 'Sending GO signal to ', s.getpeername()
-					send_mssg = str(t) + "/" + str(k) + "/" + str(thisX[k]) + "/"  + str(thisZ[k]) + "/" + str(thisL[k])
+					send_mssg = str(t) + "/" + str(k) + "/" + str(thisZ[k]) + "/" + str(thisL[k])
 					send_mssg = ":" + send_mssg	
 					if DEBUG:
 						print 'Sending ', send_mssg, ' to ', s.getpeername()
@@ -408,8 +408,8 @@ with open('output.CSV', 'w+') as output_file:
 						print 'Sending STOP to ', neigh.sock.getpeername()
 					neigh.sock.send(":" + stopMessage + "/" + str(t))
 
+			#check if we have updated timestamps from every neighbor for current k
 			syncCounter = 0
-			#check if we have updated timestamps from every neighbor
 			for key, neigh in neighbors.items():
 				if neigh:
 					if (neigh.k >= k):
@@ -417,13 +417,13 @@ with open('output.CSV', 'w+') as output_file:
 
 			if syncCounter == len(neighbors):
 				#NOTE: Consider condensing this code
-				thisX[k + 1] += - costFuncPrime(thisX[k], scalar, exp) - thisL[k]
-				thisZ[k + 1] += - float(len(neighbors))*thisL[k]
-				thisL[k + 1] += thisX[k] + len(neighbors)*thisZ[k] - (pr[t-1] * int(inI))
+				xDot[k] -= (float(costFuncPrime(thisX[k], scalar, exp)) + thisL[k])
+				zDot[k] -= float(len(neighbors))*thisL[k]
+				lDot[k] += thisX[k] + float(len(neighbors))*thisZ[k] - (pr[t-1] * float(inI))
 
-				thisX[k + 1] = thisX[k] + thisX[k + 1]*step_size				
-				thisZ[k + 1] = thisZ[k] + thisZ[k + 1]*step_size		
-				thisL[k + 1] = thisL[k] + thisL[k + 1]*step_size	
+				thisX[k + 1] = thisX[k] + xDot[k]*step_size				
+				thisZ[k + 1] = thisZ[k] + zDot[k]*step_size		
+				thisL[k + 1] = thisL[k] + lDot[k]*step_size	
 
 				#ensure that x is within the bounds
 				if thisX[k + 1] < g_min:
@@ -471,7 +471,7 @@ with open('output.CSV', 'w+') as output_file:
 		if RESET:
 			t = 1
 		else:
-			out_writer.writerow([str(t), str(k), str(thisX[k])])
+			out_writer.writerow([str(t), str(k), str(thisX[k-1]), str(thisZ[k-1]), str(thisL[k-1])])
 			t += 1
 
 		#break out of outer loop if kill process flag is set
