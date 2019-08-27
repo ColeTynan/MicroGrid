@@ -417,8 +417,8 @@ with open('output.CSV', 'w+') as output_file:
 
 			if syncCounter == len(neighbors):
 				#NOTE: Consider condensing this code
-				xDot[k] -= (float(costFuncPrime(thisX[k], scalar, exp)) + thisL[k])
-				zDot[k] -= float(len(neighbors))*thisL[k]
+				xDot[k] -= costFuncPrime(thisX[k], scalar, exp) + thisL[k])
+				zDot[k] -= (float(len(neighbors)))*thisL[k]
 				lDot[k] += thisX[k] + float(len(neighbors))*thisZ[k] - (pr[t-1] * float(inI))
 
 				thisX[k + 1] = thisX[k] + xDot[k]*step_size				
