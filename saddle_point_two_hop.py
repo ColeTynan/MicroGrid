@@ -1,5 +1,7 @@
 #!/usr/bin/env python
-#Saddle Point. Got the horses in the back. Yee haw
+#Saddle Point -- Two-hop version
+#Takes information from both neighbors and neighbors of neighbors in order to reach a solution
+#Faster than single hop by a factor of ~10
 #Programmer: Cole Walker "Texas Ranger" Tynan
 
 import select
@@ -109,7 +111,7 @@ goMessage = "GO"				#message that is received and sent, indicating that sending 
 noGoMessage = "NO_GO"		#message that is sent by a Pi that is not yet fully connected, indicating a shutdown of the system of Pis should begin
 endMessage = "END"			#message sent when inner loop ends, indicates to other Pis to stop receiving 
 stopMessage = "STOP"		#message send by the timer initially, that will propogate and stop the calculations after a certain amount of time
-FORMAT = "FORMAT = python ratio_consensus_dist.py info_about_der.txt pr_values.csv OR leave blank for defaults"
+#FORMAT = "FORMAT = python saddle_point_two_step.py info_about_der.txt pr_values.csv OR leave blank for defaults" #This is outdated
 
 #use this socket to receive the incoming connections
 recvsocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)

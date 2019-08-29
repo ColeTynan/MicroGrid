@@ -1,25 +1,32 @@
 # Microgrid
 
-send_to_pis
-	Use this script to send a file to each of the PIs with the following format:
-.send_to_PIs.sh file_to_send.py folder(optional) text_file_containing_IP_addresses(optional, default is all Pis)
+WELCOME!
 
-activate_rat_con
-USAGE: ./path/activate graph_structure(integer value from 0-7) reference_file(int value) IP_File.txt(int value) [leave as 0 for defaults]
-	Graph structure options (figures in accompanying document)
- 1. ring4.txt					-- ring of four agents
- 2. ring8.tx						-- ring of eight agents
- 4. smallASym.txt			-- small asymmetrical structure of four agents
- 5. hook.txt						-- shaped like a "hook" or a linked list
- 6. treeBal7.txt				-- a balanced binary tree strcture
- 7. treeUnb7.txt				-- unbalanced binary tree
-	reference file options
- 1. reg-d-abridged.CSV -- the first ten values from reg-d
- 2. reg-d.CSV					-- The full reg-d file, containing 1200 entries
- 3. reg-d-factor5.CSV	-- reg-d but every value is increased by a factor of 5 (TODO)
-	IP file options
- 1. First four Pis
- 2. first eight pis
- 3. all Pis				(TODO) 
+This is my microgrid optimization simulation for several different algorithms. Connect your computer up to the ethernet switch and follow these instructions
+to set up your computer to work with the Pis.
 
-	
+~~~~ SETUP INSTRUCTIONS ~~~~
+1. Share ssh key with the Pis, which allows ssh without prompting a password, and is required for the script to work.
+2. Run the executable. It will prompt you to select which algorithm you would like to run, which graph structure (illustrations
+	are located in the word document called GraphStructures.docx in the home directory. TODO: make this document)
+3. ssh into the "Controller" or "Accumulator" Pi. Its IP is 169.254.136.2, with username pi and password "raspberry".
+in the home directory you will find a file called "results.csv". This is the file containing the output from all the Pis.
+NOTE: You can also ssh into each of the Pis directly, and look at their respective output files. These are the only files
+to show the number of iterations of the algorithm reached for each time-interval.
+
+
+
+~~~~ SCRIPTS ~~~~
+
+send_to_pis.sh
+	Use this script to send a file to each of the PIs.
+
+	USAGE: .send_to_PIs.sh file_to_send.py folder(optional) text_file_containing_IP_addresses(optional, default is all Pis) TODO: update format, i think it changed
+
+activate_microgrid_simulation.sh
+	This script runs the show. This can remotely run the algorithms and there are a variety of graph structures to choose from.
+
+	USAGE: ./path/activate graph_structure(integer value from 0-7) reference_file(int value) IP_File.txt(int value) [leave as 0 for defaults]
+	OR just run the script, it will automatically prompt you for missing fields.
+
+

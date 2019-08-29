@@ -1,7 +1,7 @@
 #!/bin/bash
 #FORMAT: ./send_to_PIs.sh file_to_send.py folder file_containing_IPs.txt 
 
-DEFAULT_IP='/mnt/c/Users/cole/Documents/Internship_Work/microgrid/IPs/eightIP.txt'
+DEFAULT_IP='/mnt/c/Users/cole/Documents/Internship_Work/microgrid/IPs/allIP.txt'
 
 file=$1
 FOLDER=$2

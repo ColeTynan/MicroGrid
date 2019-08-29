@@ -23,11 +23,17 @@
 FORMAT_REMINDER='USAGE: ./path/activate graph_structure(integer value from 0-7) reference_file(int value) IP_File.txt(int value) [leave as 0 for defaults]'
 SCRIPT='runratcon.sh'
 GRAPHS=('graphs/ring4.txt' 'graphs/ring8.txt' 'graphs/smallASym1.txt' 'graphs/smallASym2.txt' 'graphs/hook.txt' 'graphs/treeBal7.txt' 'graphs/treeUnb7.txt')
-IP_FILES=('IPs/fourIP.txt' 'IPs/eightIP.txt')
-REF_FILES=('reg-d-abridged.CSV' 'reg-d.CSV' 'reg-d-factor1000.CSV')
-SIM_FILES=('runratcon.sh' 'runsadpoint.sh')
+IP_FILES=('IPs/fourIP.txt' 'IPs/eightIP.txt' 'IPs/allIP.txt')
+
+REF_FILES=()
+for file in ./referenceSignals/*.CSV; do
+	REF_FILES+=("$file")
+done
+	
+#REF_FILES=('reg-d-abridged.CSV' 'reg-d.CSV' 'reg-d-factor1000.CSV' 'reg-d-factor1000-abridged.CSV')
+SIM_FILES=('runratcon.sh' 'runsadpoint.sh' 'run_sp_two_step.sh')
 DEF_REF=0
-DEF_IP=1
+DEF_IP=2
 DEF_GRAPH=0
 DEF_SIM=0
 SIM_I=$1
@@ -39,10 +45,7 @@ IP_I=$4
 #Prompt for simulation to run
 if [[ -z "$SIM_I" ]]; then
 	echo "Which simulation would you like to test?"
-	echo "Simulations:
-	 1. Ratio Consensus
-	 2. Saddle Point Dynamic
-	 3. DANA (unavailable)"
+	echo -e "Simulations:\n\t1. Ratio Consensus\n\t2. Saddle Point Dynamic (one-step)\n\t3. Saddle Point Dynamic (two-step)"
 	read -n 1 SIM_I
 	echo ""
 fi 
@@ -73,10 +76,17 @@ fi
 #Getting reference signal if not used as command line input
 if [[ -z "$REF_I" ]]; then
 	echo "Which reference signal data file would you like to use?"
+	for ((i = 0; i < "${#REF_FILES[@]}"; i++)); do
+		index="$((i+1))"
+		echo -e "\t"$index". ${REF_FILES["$i"]}"
+	done
+: << 'END'
 	echo "Reference file options:
-	 1. reg-d-abridged.CSV			-- the first ten values from reg-d for debugging purposes
-	 2. reg-d.CSV								-- The full reg-d file, containing 1200 entries. Takes ~40 minutes. 
-	 3. reg-d-factor1000.CSV		-- reg-d but every value is increased by a factor of 5 (TODO, unavailable)"
+		1. reg-d-abridged.CSV 
+		2. reg-d.CSV 	
+		3. reg-d-factor1000.CSV						
+		4. reg-d-factor1000-abridged.CSV"
+END
 	read -n 1 REF_I
 	echo ""
 fi
@@ -90,22 +100,19 @@ fi
 #Getting input for IP file (TODO: provide a workaround for this. Usually running on all pis doesnt cause problems)
 if [[ -z "$IP_I" ]]; then
 
-: << 'END'
-	echo "IP file options: (will remove this option later, not necessary)
-	 1. First four Pis
-	 2. first eight pis
-	 3. all Pis				(TODO, not available yer)" 
-	 read -n 1 IP_I
+	echo -e "IP file options:
+\t1. First four Pis
+\t2. first eight pis
+\t3. all Pis"
+	read -n 1 IP_I
 	 echo ""
 fi 
-END
 
-#if [[ "$IP_I" -gt 0 ]]; then
-#	IP_I="$((IP_I - 1))"
-#else
+if [[ "$IP_I" -gt 0 ]]; then
+	IP_I="$((IP_I - 1))"
+else
 	IP_I="$DEF_IP"
 fi
-
 
 SIM_I="${SIM_FILES["$SIM_I"]}"
 GRAPH_I="${GRAPHS["$GRAPH_I"]}"

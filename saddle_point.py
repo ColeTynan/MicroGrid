@@ -10,7 +10,6 @@ import time
 import fcntl
 import struct
 import csv
-#TODO: Consider adding argparse to handle cmd line options such as -d for debugging
 
 DEBUG = True
 #class to house information about the neighbors of the PI
@@ -20,8 +19,6 @@ class Neighbor:
 		self.sock = theSocket
 		self.ready = False
 		self.isOpen = True
-		self.messages = Queue.Queue()
-		#TODO: figure out a queue method for handling messages maybe
 
 	def setReady(self, flag):
 		try:
@@ -100,7 +97,7 @@ PORT = 20000
 THIS_IP = get_ip_address('eth0')
 
 #parameters for iteration
-time_limit = 0.5															#Time limit in seconds
+time_limit = 10																#Time limit in seconds
 rest_time = 1.0																#time between outer loop iterations
 step_size = 0.01															#can play with this value a little
 
@@ -360,7 +357,6 @@ with open('output.CSV', 'w+') as output_file:
 											print 'The neighbors current value of k:', neighbors[neighbor_ip[0]].k
 											print 'k_value > neighbors[neighbor_ip[0]].k): ', (k_value > neighbors[neighbor_ip[0]].k) 
 											print '(k_value <= k + 1 ):', (k_value <= k + 1 )
-										neighbors[neighbor_ip[0]].messages.put_nowait(data)
 								except IndexError:
 									print 'Tried to access a nonextistent index'
 									print 'len(thisX) = ', len(thisX), 'and tried to access k = ', k_value, 'whle this ders k =', k
@@ -426,12 +422,10 @@ with open('output.CSV', 'w+') as output_file:
 				thisL[k + 1] = thisL[k] + lDot[k]*step_size	
 
 				#ensure that x is within the bounds
-				"""
 				if thisX[k + 1] < g_min:
 					thisX[k + 1] = g_min
 				elif thisX[k + 1] > g_max:
 					thisX[k + 1] = g_max
-				"""
 
 				k += 1
 				for key,neigh in neighbors.items():
