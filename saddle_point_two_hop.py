@@ -2,7 +2,10 @@
 #Saddle Point -- Two-hop version
 #Takes information from both neighbors and neighbors of neighbors in order to reach a solution
 #Faster than single hop by a factor of ~10
-#Programmer: Cole Walker "Texas Ranger" Tynan
+#USAGE: ./saddle_point_two_hop graphs/graph_structure.txt referenceFiles/signal_file.CSV
+#Programmer: Cole W Tynan-Wood
+#Credit to Priyank Srivastava and Tor Anderson for providing all of the math and much assistance in creating
+#this program. Contact me at (910) 859-1660 if you have questions about how any of this works.
 
 import select
 import socket
@@ -12,19 +15,29 @@ import time
 import fcntl
 import struct
 import csv
-#TODO: Consider adding argparse to handle cmd line options such as -d for debugging
 
 DEBUG = True
 #class to house information about the neighbors of the PI
 class Neighbor:
+
+	#overloaded initializer for specified socket (socket can be set as zero, same thing as unspecified
 	def __init__(self, theSocket):
 		self.k = -1
 		self.sock = theSocket
 		self.ready = False
-		self.isOpen = True
-		self.messages = Queue.Queue()
-		#TODO: figure out a queue method for handling messages maybe
+		self.isOpenBool = False
+		if theSocket:
+			self.isOpenBool = True
+		self.th = False
+		self.oh = False
+		self.numPaths = 0				#Number of two-step paths to this neighbor (only applies if two steps away)
 
+	#create or change the socket for a neighbor object
+	def makeSock(self, newSock):
+		self.sock = newSock
+		self.isOpenBool = True
+	
+	#Set the neighbor to be ready to send or recv from
 	def setReady(self, flag):
 		try:
 			if type(flag) is not bool:
@@ -35,32 +48,50 @@ class Neighbor:
 			print >>sys.stderr, 'ERROR: wrong type given to setReady()'
 			return False
 
+	def isOpen(self):
+		return self.isOpenBool
+
 	def isReady(self):
 		return self.ready
 	
+	def setOneHop(self):
+		self.oh = True
+
+	def isOneHop(self):
+		return self.oh
+	#sets the boolean that indicated whether this neighbor is a neighbor of a neighbor
+	def setTwoHop(self):
+		self.th = True
+
+	#return true if this neighbor is a neighbor of a neighbor
+	def isTwoHop(self):
+		return self.th
+
+	#Reset k value for neighbor and indicate that it is not ready to interact with
 	def reset(self):
 		self.k = -1
 		self.ready = False
 
+	#closes the socket encased by the neighbor object and sets status to off
 	def closeSock(self):
 		sock.close()
-		self.isOpen = False
+		self.isOpenBool = False
 #Neighbor class
 
-#calculate the derivate of a simple a*x^b polynomial (mononomial i guess) given x and return
+#calculate the derivate of a simple a*x^b polynomial (mononomial i guess) given x and return numerical output
 def costFuncPrime(x, a, b):
 	return float((a*b)*(x**(b - 1.0)))
 
-#returns true if all elements in a dictionary are "True" or they have been created
+#returns true if all neighbors in a dictionary of neighbor objects are open or they have been created
 def all_true(dict):
 	allGood = True
 	for s,v in dict.items():
-		if  not v:
+		if not v.isOpen():
 			allGood = False
 	return allGood
 #all_true for lists
 
-#function that checks that the dictionary of neighbors is fully populated and displays output
+#function that checks that the dictionary of neighbors is fully populated and displays output (purely to reduce bloat later in program)
 def all_have_connected(dict):
 	allGood = all_true(dict)
 	if allGood:
@@ -102,7 +133,7 @@ PORT = 20000
 THIS_IP = get_ip_address('eth0')
 
 #parameters for iteration
-time_limit = 0.5															#Time limit in seconds
+time_limit = 3.0															#Time limit in seconds
 rest_time = 1.0																#time between outer loop iterations
 step_size = 0.01															#can play with this value a little
 
@@ -163,17 +194,19 @@ if DEBUG:
 try:
 	neighFileName = sys.argv[1] 
 except:	#default value assigned if nothing passed to program (four pi setup in ring structure)
-	neighFileName = '/home/pi/graphs/ring4.txt'
+	neighFileName = 'graphs/hook.txt'
 
 try: 
 	neighFile = open(neighFileName)
 except: 
-	print "Invalid neighbor file, check file and retry"
+	print "Invalid neighbor file, check name and retry"
 	exit(0)
 
  #We start by seeking out neighbors. some fail to accept connections, we wait for them to come online
 
-num_agents = neighFile.readline()			#NOT USED, just need to get the file iterator to the right place
+numAgents = neighFile.readline()			#NOT USED, just need to get the file iterator to the right place
+numAgents = int(numAgents.split('\n')[0])
+
 #dictionary of neighbor objects
 neighbors = {}
 
@@ -186,19 +219,55 @@ for line in neighFile:
 		neighbors[pidb[line]] = Neighbor(newsock)
 	except Exception as e:
 		print 'Connection failed with IP', pidb[line]
-		neighbors[pidb[line]] = 0
+		neighbors[pidb[line]] = Neighbor(False)
+	neighbors[pidb[line]].setOneHop()
 
+#parse the filename to get the nighbor-neighbor file
+NNSplit = neighFileName.split('/')
+NNFileName = 'graphs/two_hop/' + NNSplit[1]
+try: 
+	NNFile = open(NNFileName)
+except: 
+	print "Invalid two-hop file, check name and retry"
+	exit(0)
+
+numNeighbors = len(neighbors)
+
+
+#Fill out neighbors of neighbors and connect to any that are on and listening
+for line in NNFile:
+	line = line.split()			#FORMAT of line: two_hop_neighbor(Ri) num_paths(some int)
+	# line[0] : the code for the two-hop neighbor in question (R1, R2, etc), line[1] : the number of paths to this two-hop neighbor
+	if pidb[line[0]] not in neighbors:
+		try:
+			newsock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+			newsock.connect((pidb[line[0]],PORT))
+			neighbors[pidb[line[0]]] = Neighbor(newsock)
+			if DEBUG:
+				print 'Connection successful with neighbor of neighbor', newsock.getpeername()
+		except Exception as e:
+			if DEBUG:
+				print 'Connection failed with IP', pidb[line[0]]
+				print e
+			neighbors[pidb[line[0]]] = Neighbor(False)
+	neighbors[pidb[line[0]]].setTwoHop()		#set the two-hop flag
+	neighbors[pidb[line[0]]].numPaths = int(line[1])
+				
+numAllNeighbors = len(neighbors)
 #Parse signal file
 try:
 	signalFileName = sys.argv[2]
 except: 
 	#if inI:
-	signalFileName = 'reg-d-abridged.CSV'
+	signalFileName = 'referenceSignals/reg-d-abridged.CSV'
 #	else:
 		#pass
 
-pr = list()
-tmax = 0																			#Maximum number of time intervals (outer loop) that will be determined by reading the signal input file
+# ~~ Read the reference signal file ~~~
+pr = list()				#The list of reference signal values, indexes indicate time-intervals
+vConst = 1.0/float(numAgents)
+
+tmax = 0					#Maximum number of time intervals (outer loop) that will be determined by reading the signal input file
 with open(signalFileName) as pr_input_file:
 	csv_reader = csv.reader(pr_input_file, delimiter=',')
 	for row in csv_reader:
@@ -208,10 +277,10 @@ with open(signalFileName) as pr_input_file:
 #Init lists, counters, and iteration limits
 t = 1																					#iterator for outer loop 
 allConnected = all_have_connected(neighbors)	#returns true if all neighbors have connected
-thisX = list()
-thisZ = list()
-thisL = list()
-xDot = list()
+thisX = list()						#x - values
+thisZ = list()						# z - values
+thisL = list()						#lambda values
+xDot = list()							#
 zDot = list()
 lDot = list()
 #the lists for inputting sockets to select
@@ -221,7 +290,7 @@ exceptional = [ ]
 	
 #add all available sockets to the inputs list
 for k, v in neighbors.items():
-	if v:
+	if v.isOpen():
 		v.sock.setblocking(0)
 		inputs.append(v.sock)
 
@@ -234,7 +303,7 @@ with open('output.CSV', 'w+') as output_file:
 		startTime = 0
 		endTime = 0
 		for key,neigh in neighbors.items():
-			if neigh:
+			if neigh.isOpen():
 				neigh.reset()
 				if neigh.sock not in outputs:
 					outputs.append(neigh.sock)
@@ -261,7 +330,6 @@ with open('output.CSV', 'w+') as output_file:
 		readyToAdvance = False
 		RESET = False
 		
-		#these, apparently, can be initialized to pretty much anything
 
 		while not STOP:	
 			#Checking if time-limit has been reached yet (if the timer) and 
@@ -287,17 +355,30 @@ with open('output.CSV', 'w+') as output_file:
 					conn, client_address = s.accept()
 					print >>sys.stderr, 'new connection with ', client_address, ' established'
 					conn.setblocking(0)
-					neighbors[client_address[0]] = Neighbor(conn)
+					neighbors[client_address[0]].makeSock(conn)
 					inputs.append(conn)	
 					outputs.append(conn)
-					allConnected = all_have_connected(neighbors)
-				else:
+					
+					allConnected = all_true(neighbors)
+					if allConnected:
+						if DEBUG:
+							print "All connected."
+							print "Immediate neighbors:"
+							for s,v in neighbors.items():
+								if not v.isTwoHop():
+									print s
+							print "Neighbors of Neighbors:"
+							for s,v in neighbors.items():
+								if v.isTwoHop():
+									print s
+
+				else:				#If the connection is not a new connection then process the data received from this neighbor
 					neighbor_ip = s.getpeername()
 					data = s.recv(1024)
 					if data:
-					#if the timestamp for this is not a duplicate, save it
 						if DEBUG:
 							print 'received ', data, ' from ', neighbor_ip
+
 						#Split input up by message separator. 
 						dataSplit = data.split(':')
 						for message in dataSplit:
@@ -325,10 +406,6 @@ with open('output.CSV', 'w+') as output_file:
 										if DEBUG:
 											print 'NO_GO flag set'
 										SEND_NO_GO = True
-								#endCtr += 1
-								#if endCtr == len(neighbors):
-								#	pleaseContinue = True
-								#TODO: figure out a way to handle neighbors getting ahead or behind with the iteration
 							elif message[0] == stopMessage:				#if Received STOP message, we can stop processing messages and propogate the STOP signal
 								if int(message[1]) == t:
 									STOP = True
@@ -339,16 +416,22 @@ with open('output.CSV', 'w+') as output_file:
 							elif neighbors[neighbor_ip[0]].isReady():									#if this neighbor has sent the GO flag, we will start reading its input
 								t_value = int(message[0])
 								k_value = int(message[1])
-								z_value = float(message[2])
-								l_value = float(message[3])
+								x_value = float(message[2])
+								z_value = float(message[3])
+								l_value = float(message[4])
+								d_value = float(message[5])
 
 								try:
 									if (t_value == t):
 										if (k_value > neighbors[neighbor_ip[0]].k) and (k_value <= k + 1 ):
 											neighbors[neighbor_ip[0]].k = k_value
 											if not SEND_NO_GO and allConnected:
-												zDot[k_value] += l_value 
-												lDot[k_value] -= z_value
+												if neighbors[neighbor_ip[0]].isOneHop():
+													xDot[k_value] += z_value
+													zDot[k_value] += l_value + x_value + (float(numNeighbors) + d_value)*z_value - float(pr[t-1])*float(vConst)
+													lDot[k_value] -= z_value
+												if neighbors[neighbor_ip[0]].isTwoHop():
+													zDot[k_value] -= float(neighbors[neighbor_ip[0]].numPaths) * z_value
 										else:
 											KILLP = True
 											if DEBUG:
@@ -368,10 +451,8 @@ with open('output.CSV', 'w+') as output_file:
 									print 'len(thisX) = ', len(thisX), 'and tried to access k = ', k_value, 'whle this ders k =', k
 									pass
 																			
-
 						#if data END
 					else:  #if no data is received, end the connection and close the process
-						#no data
 						print 'Socket ', neighbor_ip, 'is unresponsive, closing connection and shutting down.' 
 						KILLP = True
 			#END receiving block
@@ -379,7 +460,7 @@ with open('output.CSV', 'w+') as output_file:
 			#Send NO_GO and then reset the pi, if SEND_NO_GO flag is set
 			if SEND_NO_GO:
 				for ip, neigh in neighbors.items():
-					if neigh:
+					if neigh.isOpen():
 						print 'Sending NO_GO to ', ip
 						neigh.sock.send(":" + noGoMessage)
 				RESET = True
@@ -392,66 +473,65 @@ with open('output.CSV', 'w+') as output_file:
 						s.send(":" + goMessage)
 						if DEBUG:
 							print 'Sending GO signal to ', s.getpeername()
-					send_mssg = str(t) + "/" + str(k) + "/" + str(thisZ[k]) + "/" + str(thisL[k])
+					send_mssg = str(t) + "/" + str(k) + "/" + str(thisX[k]) + "/" + str(thisZ[k]) + "/" + str(thisL[k]) + "/" + str(numNeighbors)
 					send_mssg = ":" + send_mssg	
 					if DEBUG:
 						print 'Sending ', send_mssg, ' to ', s.getpeername()
-					s.send(send_mssg)
+					try:
+						s.send(send_mssg)
+					except:
+						#this socket has disconnected
+						KILLP = True
+						break
 					outputs.remove(s)
 			#End sending loop
-
-			#Resetting flag
 			SEND_GO = False
 
-			#Time's up, light the flame of Gondor
+			#Time's up, light the beacon of Gondor
 			if STOP:
 				for key,neigh in neighbors.items():
-					if DEBUG: 
-						print 'Sending STOP to ', neigh.sock.getpeername()
-					neigh.sock.send(":" + stopMessage + "/" + str(t))
+					if neigh.isOpen():
+						if DEBUG: 
+							print 'Sending STOP to ', neigh.sock.getpeername()
+						neigh.sock.send(":" + stopMessage + "/" + str(t))
 
 			#check if we have updated timestamps from every neighbor for current k
 			syncCounter = 0
 			for key, neigh in neighbors.items():
-				if neigh:
+				if neigh.isOpen():
 					if (neigh.k >= k):
-						syncCounter += 1			#NOTE: may be more scalable to do this while receiving data rather than separately 
+						syncCounter += 1		
 
-			if syncCounter == len(neighbors):
-				#NOTE: Consider condensing this code
-				xDot[k] -= costFuncPrime(thisX[k], scalar, exp) + thisL[k]
-				zDot[k] -= (float(len(neighbors)))*thisL[k]
-				lDot[k] += thisX[k] + float(len(neighbors))*thisZ[k] - (pr[t-1] * 0.25) #NOTE: change back
+			if syncCounter == numAllNeighbors:
+				xDot[k] -= costFuncPrime(thisX[k], scalar, exp) + thisL[k] + thisX[k] - float(numNeighbors)*thisZ[k] + pr[t - 1]*vConst
+				zDot[k] -= (float(numNeighbors))*(thisL[k] + thisX[k] - pr[t - 1] * vConst + thisZ[k] * (1.0 + float(numNeighbors)))
+				lDot[k] += thisX[k] + float(numNeighbors)*thisZ[k] - pr[t-1]*vConst
 
 				thisX[k + 1] = thisX[k] + xDot[k]*step_size				
 				thisZ[k + 1] = thisZ[k] + zDot[k]*step_size		
 				thisL[k + 1] = thisL[k] + lDot[k]*step_size	
 
 				#ensure that x is within the bounds
-				"""
 				if thisX[k + 1] < g_min:
 					thisX[k + 1] = g_min
 				elif thisX[k + 1] > g_max:
 					thisX[k + 1] = g_max
-				"""
 
 				k += 1
 				for key,neigh in neighbors.items():
 					if neigh.sock not in outputs:
 						outputs.append(neigh.sock)
-			elif syncCounter > len(neighbors):
+				
+			elif syncCounter > numAllNeighbors:
 				print 'ERROR: syncCount greater than number of neighbors.'
 				print 'syncCount = ', syncCounter
-				print 'num of neighbors = ', len(neighbors)
+				print 'num of (all) neighbors = ', numAllNeighbors
 				KILLP = True 
-
 
 			#Error catching code block
 			for s in exceptional:
 				print 'Socket', s.getpeername(), ' is throwing errors, turning it off and shutting down process'
 				KILLP = True
-
-			
 
 			#End processes check
 			if KILLP:		
@@ -466,7 +546,6 @@ with open('output.CSV', 'w+') as output_file:
 				recvsocket.close()
 				break
 			#killprocess
-
 
 		if DEBUG:
 			print 'Ending t = ', t , ' with k = ', k

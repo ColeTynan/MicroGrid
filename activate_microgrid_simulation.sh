@@ -31,7 +31,7 @@ for file in ./referenceSignals/*.CSV; do
 done
 	
 #REF_FILES=('reg-d-abridged.CSV' 'reg-d.CSV' 'reg-d-factor1000.CSV' 'reg-d-factor1000-abridged.CSV')
-SIM_FILES=('runratcon.sh' 'runsadpoint.sh' 'run_sp_two_step.sh')
+#SIM_FILES=('runratcon.sh' 'runsadpoint.sh' 'run_sp_two_step.sh')
 DEF_REF=0
 DEF_IP=2
 DEF_GRAPH=0
@@ -80,13 +80,6 @@ if [[ -z "$REF_I" ]]; then
 		index="$((i+1))"
 		echo -e "\t"$index". ${REF_FILES["$i"]}"
 	done
-: << 'END'
-	echo "Reference file options:
-		1. reg-d-abridged.CSV 
-		2. reg-d.CSV 	
-		3. reg-d-factor1000.CSV						
-		4. reg-d-factor1000-abridged.CSV"
-END
 	read -n 1 REF_I
 	echo ""
 fi
@@ -114,7 +107,7 @@ else
 	IP_I="$DEF_IP"
 fi
 
-SIM_I="${SIM_FILES["$SIM_I"]}"
+#SIM_I="${SIM_FILES["$SIM_I"]}"
 GRAPH_I="${GRAPHS["$GRAPH_I"]}"
 IP_I="${IP_FILES["$IP_I"]}"
 REF_I="${REF_FILES["$REF_I"]}"
@@ -126,7 +119,7 @@ echo "$REF_I"
 #clear folder containing all output files in the aggregrator
 `ssh pi@169.254.136.2 "rm -r csvFiles && mkdir csvFiles"`
 while read line; do
-	 `ssh -n -f pi@"$line" "sh -c 'nohup ~/"$SIM_I" "$GRAPH_I" "$REF_I" > out.txt 2>&1 &'"`
+	 `ssh -n -f pi@"$line" "sh -c 'nohup ~/runsim.sh "$SIM_I" "$GRAPH_I" "$REF_I" > out.txt 2>&1 &'"`
 	 echo "Sent to $line"
 done < "$IP_I"
 

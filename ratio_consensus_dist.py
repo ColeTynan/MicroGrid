@@ -167,7 +167,7 @@ if DEBUG:
 try:
 	signalFileName = sys.argv[2]
 except: 
-	signalFileName = 'reg-d-abridged.CSV'
+	signalFileName = 'referenceSignals/reg-d-abridged.CSV'
 
 pr = list()
 tmax = 0

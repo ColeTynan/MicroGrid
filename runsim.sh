@@ -6,9 +6,11 @@ REMOTE='169.254.136.2'
 PINUMFILE='pinum.txt'
 PINUM=$(head -n 1 $PINUMFILE)
 FILENAME="output$PINUM.CSV"
-DEF_GRAPH="/home/pi/graphs/ring4.txt"
-GRAPH=$1
-REF_FILE=$2 
+DEF_GRAPH="/home/pi/graphs/hook.txt"
+SIMS=('ratio_consensus_dist.py' 'saddle_point.py' 'saddle_point_two_step.py')
+SIM_I=$1
+GRAPH=$2
+REF_FILE=$3
 
 if [[ -z "$GRAPH" ]]; then
 	GRAPH="$DEF_GRAPH"
@@ -20,7 +22,7 @@ if [[ -e "output.CSV" ]]; then
 fi
 
 echo "$REF_FILE"
-`python ratio_consensus_dist.py "$GRAPH" "$2"`
+`python saddle_point.py "$GRAPH" "$REF_FILE"`
 #Checks if output.CSV exists first before sending
 #Send output to remote location and compile all into one file
 if [[ -e "output.CSV" ]]; then

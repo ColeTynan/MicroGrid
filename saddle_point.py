@@ -169,6 +169,8 @@ except:
  #We start by seeking out neighbors. some fail to accept connections, we wait for them to come online
 
 num_agents = neighFile.readline()			#NOT USED, just need to get the file iterator to the right place
+num_agents = int(num_agents.split('\n')[0])
+
 #dictionary of neighbor objects
 neighbors = {}
 
@@ -188,7 +190,7 @@ try:
 	signalFileName = sys.argv[2]
 except: 
 	#if inI:
-	signalFileName = 'reg-d-abridged.CSV'
+	signalFileName = 'referenceSignals/reg-d-abridged.CSV'
 #	else:
 		#pass
 
@@ -415,7 +417,7 @@ with open('output.CSV', 'w+') as output_file:
 				#NOTE: Consider condensing this code
 				xDot[k] -= costFuncPrime(thisX[k], scalar, exp) + thisL[k]
 				zDot[k] -= (float(len(neighbors)))*thisL[k]
-				lDot[k] += thisX[k] + float(len(neighbors))*thisZ[k] - (pr[t-1] * 0.25) #NOTE: change back
+				lDot[k] += thisX[k] + float(len(neighbors))*thisZ[k] - pr[t-1]*(1/float(num_agents)) #NOTE: change back
 
 				thisX[k + 1] = thisX[k] + xDot[k]*step_size				
 				thisZ[k + 1] = thisZ[k] + zDot[k]*step_size		
