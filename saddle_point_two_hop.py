@@ -16,7 +16,7 @@ import fcntl
 import struct
 import csv
 
-DEBUG = True
+DEBUG = False
 #class to house information about the neighbors of the PI
 class Neighbor:
 
@@ -133,7 +133,7 @@ PORT = 20000
 THIS_IP = get_ip_address('eth0')
 
 #parameters for iteration
-time_limit = 3.0															#Time limit in seconds
+time_limit = 1.0															#Time limit in seconds
 rest_time = 1.0																#time between outer loop iterations
 step_size = 0.01															#can play with this value a little
 

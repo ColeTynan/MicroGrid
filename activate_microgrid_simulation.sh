@@ -45,7 +45,7 @@ IP_I=$4
 #Prompt for simulation to run
 if [[ -z "$SIM_I" ]]; then
 	echo "Which simulation would you like to test?"
-	echo -e "Simulations:\n\t1. Ratio Consensus\n\t2. Saddle Point Dynamic (one-step)\n\t3. Saddle Point Dynamic (two-step)"
+	echo -e "Simulations:\n\t1. Ratio Consensus\n\t2. Saddle Point Dynamic (one-hop)\n\t3. Saddle Point Dynamic (two-hop)"
 	read -n 1 SIM_I
 	echo ""
 fi 

@@ -11,7 +11,7 @@ import fcntl
 import struct
 import csv
 
-DEBUG = True
+DEBUG = False
 #class to house information about the neighbors of the PI
 class Neighbor:
 	def __init__(self, theSocket):
