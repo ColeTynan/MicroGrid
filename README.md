@@ -75,21 +75,21 @@ activate_microgrid_simulation.sh
 	OR just run the script without parameters, it will automatically prompt you for missing fields. Leaving zero will choose the default value.
 
 run_sim.sh
-	This script is used by the pis alone. This is run by the activate script remotely, and runs the simulation of choice, as well as sending all the output to the
-	accumulator pi to be compiled into one easily formatted document.
+	This script is used by the pis alone. This is run by the activate script remotely and runs the simulation of choice, and after execution completes it sends 
+	all the output to the accumulator pi to be compiled into one easy to read, formatted CSV file called "results.csv".
 
 compile_csv.py
-	This is used by the accumulator to combine all the acquired csv files into one formatted and easily read document. It compiles this data into a CSV file called results.csv.
+	This is used by the accumulator to combine all the acquired csv files into the results file.
 
 Simulations
 	There is a python script for each of the different simulations that were implemented. 
 	1. ratio_consensus_dist.py
 	2. saddle_point_one_hop.py
 	3. saddle_point_two_hop.py
-	To make changes to the time-limit of the calculation stage, or any other changes, simply edit the file in your home directory and use ./send_to_pis.sh to
+	To make changes to the time-limit for the calculation stage or any other changes, simply edit the file in your home directory and use ./send_to_pis.sh to
 	update the Pis with your changes. The time_limit variable is the one that determines how long the pis will collect data from their neighbors before going
 	to the next iteration. It's at line ~200 in ratio_consensus_dist.py and earlier in the document for the other two simulation scripts.
 
 
-
+Good luck!
 
