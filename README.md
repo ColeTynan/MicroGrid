@@ -2,10 +2,10 @@
 
 WELCOME!
 
-	This is my microgrid optimization simulation for several different algorithms. Connect your computer up to the ethernet switch and follow these instructions to know how to work with
-my system.
-	Contact me at c0l3tw@gmail.com if you have any questions that were left unanswered in this documentation. Also check out the code of the scripts if you are confused on how to use them.
-I usually leave a format guide in the first few lines.
+	This is my microgrid optimization simulation for several different algorithms. Connect your computer up to the ethernet switch and follow these instructions to know how to work with my system.
+
+Contact me at c0l3tw@gmail.com if you have any questions that were left unanswered in this documentation. Also check out the code of the scripts if you are confused on how to use them.
+(I usually leave a format guide in the first few lines, though some *may* be outdated by now.)
 
 ~~~~ How to use this system ~~~~
  - Initial Setup -
