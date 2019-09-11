@@ -66,7 +66,7 @@ Accumulator: 169.254.136.2
 send_to_pis.sh
 	Use this script to send a file to each of the PIs. If you make edits to the simulation files, just run this script to update the code on all the Pis.
 
-	USAGE: ./send_to_PIs.sh file_to_send.ext folder(optional, leave empty for home directory) text_file_containing_IP_addresses(optional, default is all Pis) 
+	USAGE: ./send_to_PIs.sh file_to_send.ext folder(optional, leave empty or put 0 for home directory) text_file_containing_IP_addresses(optional, default is all Pis) 
 
 activate_microgrid_simulation.sh
 	This script runs the show. This can remotely run the algorithms and there are a variety of graph structures to choose from.
