@@ -38,14 +38,12 @@ SEP = ':'
 #Create own timestamp for this device
 this_timestamp = 0
 
-# ==== Var actually not needed for now, may be used for future implementation of
-# ===== some other signal able to turn on and off the network independent on set
-# ====== t_max and timer signals ===== #
-#Initialize the default outer loop val for this device (0 neutral)
-# 0 = Neutral (stay at current state), propogate neutral state
-# 1 = Reset Signal
-# -1 = Switch to stop state, propogate stop signal
-this_state_signal = 0
+# ==== Var used for determining what message we are sending
+# 0 = Sending own message
+# 1 = Sending message about the neighbors
+RELAY_OWN_DATA = 0
+RELAY_NEIGHBOR_DATA = 1
+this_state_signal = RELAY_OWN_DATA
 
 #Map of IPs to NeighborNode objects
 neighbors = {}
@@ -68,6 +66,8 @@ output_file = open('output_file.txt', 'w+')
 
 #Number of messages we're sending
 NUM_MESSAGES = 7
+#Number of slots for timestamp vals
+TIMESTAMP_SLOTS = 3
 
 #=====End of Variable initialization=====#
 
@@ -201,7 +201,7 @@ while not_disconnected:
     if this_initialization_node and all_nodes_connected and this_t != t_max:
         this_state_signal = 0
         end_time = time.time()
-        if (end_time - start_time) >= 999999:
+        if (end_time - start_time) >= 10:
             
             print ("+++++++++++++++++++++++++INCREMENTING T @ " + str(end_time - start_time))
 
@@ -362,8 +362,8 @@ while not_disconnected:
                             neighbor_node.updated_timestamp_bool = True
 
                             #Update Value
-                            neighbors[other_ip_address].timestamp_z_vals[other_k % 3] = copy.deepcopy(other_z)
-                            neighbors[other_ip_address].timestamp_lambda_vals[other_k % 3] = copy.deepcopy(other_lambda)
+                            neighbors[other_ip_address].timestamp_z_vals[other_k % TIMESTAMP_SLOTS] = copy.deepcopy(other_z)
+                            neighbors[other_ip_address].timestamp_lambda_vals[other_k % TIMESTAMP_SLOTS] = copy.deepcopy(other_lambda)
     
             else: # ===== WIP ===== #
 
@@ -388,29 +388,46 @@ while not_disconnected:
     """
 
     for s in writable:
-        if this_t == t_max:
-            other_ip_address = s.getpeername()[0]
-            neighbor_node = neighbors[other_ip_address]
-            neighbor_node.disconnected = True
-        
+
         other_ip_address = s.getpeername()[0]
         neighbor_node = neighbors[other_ip_address]
+
+        if this_t == t_max:
+            neighbor_node.disconnected = True
         
-        send_msg_list = [
-            this_t,
-            this_timestamp,
-            this_state_signal,
-            neighbor_node.processed_signal,
+        base_msg_list = [this_t, this_timestamp, this_state_signal, neighbor_node.processed_signal]
+
+        send_msg_list_relay_own = [
             this_x,
-            this_z,
-            this_lambda
+            this_z
         ]
+
+        send_msg_list_relay_neighbor = [
+        ]
+
+        for ip_address, neighbor_node in neighbors.items():
+            if ip_address == other_ip_address:
+                continue
+            timestamp_vals_index = this_timestamp % TIMESTAMP_SLOTS
+            neighbor_z = neighbor_node.timestamp_z_vals[timestamp_vals_index]
+            send_msg_list_relay_neighbor.append(ip_address)
+            send_msg_list_relay_neighbor.append(neighbor_z)
 
         send_msg = ""
         
-        for msg in send_msg_list:
+        for msg in base_msg_list:
             send_msg += str(msg)
             send_msg += SEP
+
+        if this_state_signal == RELAY_OWN_DATA:
+            for msg in send_msg_list_relay_own:
+                send_msg += str(msg)
+                send_msg += SEP
+        elif this_state_signal == RELAY_NEIGHBOR_DATA:
+            for msg in send_msg_list_relay_neighbor:
+                send_msg += str(msg)
+                send_msg += SEP
+        
         print ('Sending ', send_msg, ' to ', s.getpeername())
 
         #Reset processed signal
@@ -440,14 +457,17 @@ while not_disconnected:
         if not neighbor_node.sent_data:
             all_sent_data = False
 
+
+    #=================== If all these conditions are met, then we calculate the next iteration variables in this if statement #
+        
     if received_all_timestamps and all_neighbors_processed and all_sent_data:
         
         #input("Press Enter to Continue....")
-        print("==========================Updating Values before next timestamp==================")
+        #print("==========================Updating Values before next timestamp==================")
         
-        print("Current X ", this_x)
-        print("Current Z ", this_z)
-        print("Current Lambda ", this_lambda)
+        #print("Current X ", this_x)
+        #print("Current Z ", this_z)
+        #print("Current Lambda ", this_lambda)
 
         num_neighbors = len(neighbors)
         #print("num neighbors : ", num_neighbors)
@@ -471,8 +491,8 @@ while not_disconnected:
             #print("Neighbor Node Lambda Val: ", neighbor_node.timestamp_lambda_vals[this_timestamp %3])
             #print("Neighbor Node Z Val: ", neighbor_node.timestamp_z_vals[this_timestamp % 3])
 
-            this_z_dot += float( neighbor_node.timestamp_lambda_vals[this_timestamp % 3] )
-            this_lambda_dot -= float( neighbor_node.timestamp_z_vals[this_timestamp % 3] )
+            this_z_dot += float( neighbor_node.timestamp_lambda_vals[this_timestamp % TIMESTAMP_SLOTS] )
+            this_lambda_dot -= float( neighbor_node.timestamp_z_vals[this_timestamp % TIMESTAMP_SLOTS] )
             #Reset variables
             neighbor_node.processed_bool = False
             neighbor_node.updated_timestamp_bool = False
@@ -492,22 +512,22 @@ while not_disconnected:
 
         #print(" ============== ")
 
-        print("==================Incrementing Values=================")
+        #print("==================Incrementing Values=================")
         this_x = this_x + ALPHA_STEP * this_x_dot
         this_z = this_z + ALPHA_STEP * this_z_dot
         this_lambda = this_lambda + ALPHA_STEP * this_lambda_dot
 
-        #if this_x < this_gmin:
-        #    this_x = this_gmin
-        #if this_x > this_gmax:
-        #    this_x = this_gmax
+        if this_x < this_gmin:
+            this_x = this_gmin
+        if this_x > this_gmax:
+            this_x = this_gmax
         
-        print("Current X ", this_x)
-        print("Current Z ", this_z)
-        print("Current Lambda ", this_lambda)
+        #print("Current X ", this_x)
+        #print("Current Z ", this_z)
+        #print("Current Lambda ", this_lambda)
 
 
-        print("=================Proceeding to next timestamp=====================")
+        #print("=================Proceeding to next timestamp=====================")
         this_timestamp+=1
 
     ## ===== Process End for next iteration subroutine ===== ##
